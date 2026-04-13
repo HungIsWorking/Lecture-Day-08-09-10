@@ -7,35 +7,42 @@
 
 ## Baseline (Sprint 2)
 
-**Ngày:** ___________  
+**Ngày:** 13/04/2026
 **Config:**
 ```
 retrieval_mode = "dense"
-chunk_size = _____ tokens
-overlap = _____ tokens
+chunk_size = 300 tokens
+overlap = 50 tokens
 top_k_search = 10
 top_k_select = 3
 use_rerank = False
-llm_model = _____
+llm_model = "gemini-2.5-flash"
 ```
 
 **Scorecard Baseline:**
 | Metric | Average Score |
 |--------|--------------|
-| Faithfulness | ? /5 |
-| Answer Relevance | ? /5 |
-| Context Recall | ? /5 |
-| Completeness | ? /5 |
+| Faithfulness | 4.8 /5 |
+| Answer Relevance | 5 /5 |
+| Context Recall | 5 /5 |
+| Completeness | 3.9 /5 |
 
 **Câu hỏi yếu nhất (điểm thấp):**
-> TODO: Liệt kê 2-3 câu hỏi có điểm thấp nhất và lý do tại sao.
-> Ví dụ: "q07 (Approval Matrix) - context recall = 1/5 vì dense bỏ lỡ alias."
+> q09 (ERR-403-AUTH)
+- Recall: None
+- Reason: query dạng error code → dense retrieval chưa tối ưu keyword matching
+> q10 (VIP refund case)
+- Completeness: 4/5
+- Reason: thiếu điều kiện ngoại lệ VIP trong policy context
+> q08 (remote policy)
+- Completeness: 4/5
+- Reason: thiếu chi tiết điều kiện probation / điều kiện áp dụng
 
 **Giả thuyết nguyên nhân (Error Tree):**
 - [ ] Indexing: Chunking cắt giữa điều khoản
 - [ ] Indexing: Metadata thiếu effective_date
-- [ ] Retrieval: Dense bỏ lỡ exact keyword / alias
-- [ ] Retrieval: Top-k quá ít → thiếu evidence
+- [x] Retrieval: Dense bỏ lỡ exact keyword / alias
+- [x] Retrieval: Top-k quá ít → thiếu evidence
 - [ ] Generation: Prompt không đủ grounding
 - [ ] Generation: Context quá dài → lost in the middle
 
@@ -43,7 +50,7 @@ llm_model = _____
 
 ## Variant 1 (Sprint 3)
 
-**Ngày:** ___________  
+**Ngày:** 13/04/2026  
 **Biến thay đổi:** ___________  
 **Lý do chọn biến này:**
 > TODO: Giải thích theo evidence từ baseline results.
