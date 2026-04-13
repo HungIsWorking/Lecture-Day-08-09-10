@@ -355,14 +355,26 @@ def build_index(docs_dir: Path = DOCS_DIR, db_dir: Path = CHROMA_DB_DIR) -> None
 def list_chunks(db_dir: Path = CHROMA_DB_DIR, n: int = 5) -> None:
     """
     In ra n chunk đầu tiên trong ChromaDB để kiểm tra chất lượng index.
-
-    TODO Sprint 1:
-    Implement sau khi hoàn thành build_index().
-    Kiểm tra:
-    - Chunk có giữ đủ metadata không? (source, section, effective_date)
-    - Chunk có bị cắt giữa điều khoản không?
-    - Metadata effective_date có đúng không?
+    Checklist:
+    - Tự động thông báo [OK] / [MISSING] cho từng metadata field
+    - Cảnh báo nếu chunk bị cắt giữa câu (ký tự cuối không phải dấu chấm / xuống dòng)
+    - Kiểm tra effective_date có đúng không
     """
+    REQUIRED_FIELDS = ["source", "section", "department", "effective_date", "access"]
+
+    def _tag(value: Any, field: str) -> str:
+        """Trả về [OK] nếu field hợp lệ, [MISSING] nếu thiếu."""
+        if value in (None, "", "unknown"):
+            return f"\033[91m[MISSING]\033[0m {value!r}"
+        return f"\033[92m[OK]\033[0m {value}"
+
+    def _check_cut(text: str) -> str:
+        """Kiểm tra chunk có bị cắt giữa câu không."""
+        last_char = text.rstrip()[-1] if text.strip() else ""
+        if last_char not in (".", "!", "?", ":", "\n", "—", "-"):
+            return f"\033[93m[WARN] Có thể bị cắt giữa câu (kỳ tự cuối: {last_char!r})\033[0m"
+        return "\033[92m[OK] Kết thúc tự nhiên\033[0m"
+
     try:
         import chromadb
         client = chromadb.PersistentClient(path=str(db_dir))
@@ -372,10 +384,10 @@ def list_chunks(db_dir: Path = CHROMA_DB_DIR, n: int = 5) -> None:
         print(f"\n=== Top {n} chunks trong index ===\n")
         for i, (doc, meta) in enumerate(zip(results["documents"], results["metadatas"])):
             print(f"[Chunk {i+1}]")
-            print(f"  Source: {meta.get('source', 'N/A')}")
-            print(f"  Section: {meta.get('section', 'N/A')}")
-            print(f"  Effective Date: {meta.get('effective_date', 'N/A')}")
-            print(f"  Text preview: {doc[:120]}...")
+            for field in REQUIRED_FIELDS:
+                print(f"  {field:<15}: {_tag(meta.get(field), field)}")
+            print(f"  {'cut_check':<15}: {_check_cut(doc)}")
+            print(f"  {'text_preview':<15}: {doc[:150]}...")
             print()
     except Exception as e:
         print(f"Lỗi khi đọc index: {e}")
@@ -385,36 +397,72 @@ def list_chunks(db_dir: Path = CHROMA_DB_DIR, n: int = 5) -> None:
 def inspect_metadata_coverage(db_dir: Path = CHROMA_DB_DIR) -> None:
     """
     Kiểm tra phân phối metadata trong toàn bộ index.
-
     Checklist Sprint 1:
     - Mọi chunk đều có source?
     - Có bao nhiêu chunk từ mỗi department?
+    - Có bao nhiêu chunk từ mỗi source file?
+    - Có bao nhiêu chunk theo access level?
     - Chunk nào thiếu effective_date?
-
-    TODO: Implement sau khi build_index() hoàn thành.
     """
     try:
         import chromadb
         client = chromadb.PersistentClient(path=str(db_dir))
         collection = client.get_collection("rag_lab")
-        results = collection.get(include=["metadatas"])
+        results = collection.get(include=["documents", "metadatas"])
 
-        print(f"\nTổng chunks: {len(results['metadatas'])}")
+        total = len(results["metadatas"])
+        print(f"\n=== Metadata Coverage Report ===")
+        print(f"Tổng chunks: {total}")
 
-        # TODO: Phân tích metadata
-        # Đếm theo department, kiểm tra effective_date missing, v.v.
-        departments = {}
+        departments: Dict[str, int] = {}
+        access_levels: Dict[str, int] = {}
+        sources: Dict[str, int] = {}
         missing_date = 0
-        for meta in results["metadatas"]:
+        missing_source = 0
+        cut_warnings = 0
+
+        for doc, meta in zip(results["documents"], results["metadatas"]):
+            # Đếm theo department
             dept = meta.get("department", "unknown")
             departments[dept] = departments.get(dept, 0) + 1
+
+            # Đếm theo access level
+            access = meta.get("access", "unknown")
+            access_levels[access] = access_levels.get(access, 0) + 1
+
+            # Đếm theo source file
+            src = meta.get("source", "unknown")
+            src_key = Path(src).name if src not in ("", None, "unknown") else "unknown"
+            sources[src_key] = sources.get(src_key, 0) + 1
+
+            # Kiểm tra missing fields
             if meta.get("effective_date") in ("unknown", "", None):
                 missing_date += 1
+            if meta.get("source") in ("", None):
+                missing_source += 1
 
-        print("Phân bố theo department:")
-        for dept, count in departments.items():
-            print(f"  {dept}: {count} chunks")
-        print(f"Chunks thiếu effective_date: {missing_date}")
+            # Kiểm tra cắt giữa câu
+            last_char = doc.rstrip()[-1] if doc.strip() else ""
+            if last_char not in (".", "!", "?", ":", "\n", "—", "-"):
+                cut_warnings += 1
+
+        print("\nPhân bố theo department:")
+        for dept, count in sorted(departments.items()):
+            print(f"  {dept}: {count} chunks ({count/total*100:.1f}%)")
+
+        print("\nPhân bố theo source file:")
+        for src, count in sorted(sources.items()):
+            print(f"  {src}: {count} chunks ({count/total*100:.1f}%)")
+
+        print("\nPhân bố theo access level:")
+        for level, count in sorted(access_levels.items()):
+            print(f"  {level}: {count} chunks ({count/total*100:.1f}%)")
+
+        print(f"\nChunks thiếu effective_date : {missing_date}/{total}")
+        print(f"Chunks thiếu source         : {missing_source}/{total}")
+        print(f"Chunks có thể bị cắt câu  : {cut_warnings}/{total}")
+        if cut_warnings > 0:
+            print("  → Gợi ý: cải thiện _split_by_size() để cắt tại ranh giới tự nhiên.")
 
     except Exception as e:
         print(f"Lỗi: {e}. Hãy chạy build_index() trước.")
@@ -448,20 +496,13 @@ if __name__ == "__main__":
             print(f"\n  [Chunk {i+1}] Section: {chunk['metadata']['section']}")
             print(f"  Text: {chunk['text'][:150]}...")
 
-    # Bước 3: Build index (yêu cầu implement get_embedding)
-    print("\n--- Build Full Index ---")
-    print("Lưu ý: Cần implement get_embedding() trước khi chạy bước này!")
-    # Uncomment dòng dưới sau khi implement get_embedding():
-    # build_index()
+    # Bước 3: Build index
+    print("\n--- Build Full Index (Step 3) ---")
+    build_index()
 
     # Bước 4: Kiểm tra index
-    # Uncomment sau khi build_index() thành công:
-    # list_chunks()
-    # inspect_metadata_coverage()
+    print("\n--- Kiểm tra Index (Step 4) ---")
+    list_chunks(n=5)
+    inspect_metadata_coverage()
 
-    print("\nSprint 1 setup hoàn thành!")
-    print("Việc cần làm:")
-    print("  1. Implement get_embedding() - chọn OpenAI hoặc Sentence Transformers")
-    print("  2. Implement phần TODO trong build_index()")
-    print("  3. Chạy build_index() và kiểm tra với list_chunks()")
-    print("  4. Nếu chunking chưa tốt: cải thiện _split_by_size() để split theo paragraph")
+    print("\n✅ Sprint 1 hoàn thành!")
