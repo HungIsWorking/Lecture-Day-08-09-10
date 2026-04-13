@@ -1,6 +1,6 @@
 # Báo Cáo Cá Nhân — Lab Day 08: RAG Pipeline
 
-**Họ và tên:** Hoàng Lê Minh  
+**Họ và tên:** Tạ Bảo Ngọc 
 **Vai trò trong nhóm:** Eval Owner (Chủ trì Sprint 4)  
 **Ngày nộp:** 14/04/2026  
 **Độ dài yêu cầu:** 500–800 từ
