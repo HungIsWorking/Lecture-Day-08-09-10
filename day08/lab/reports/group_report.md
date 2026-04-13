@@ -8,6 +8,7 @@
 | Nguyễn Đăng Hải | Retrieval Owner | ___ |
 | Tạ Bảo Ngọc | Eval Owner | ___ |
 | Thái Minh Kiên | Eval Owner + Retrieval owner| ___ |
+| Trần Trung Hậu | Retrieval owner| ___ |
 | Lê Minh Hoàng | Documentation Owner | ___ |
 
 **Ngày nộp:** 13/04/2026  
