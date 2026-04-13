@@ -35,7 +35,7 @@ load_dotenv()
 TOP_K_SEARCH = 10    # Số chunk lấy từ vector store trước rerank (search rộng)
 TOP_K_SELECT = 3     # Số chunk gửi vào prompt sau rerank/select (top-3 sweet spot)
 
-LLM_MODEL = os.getenv("LLM_MODEL", "gemini-1.5-flash")
+LLM_MODEL = os.getenv("LLM_MODEL", "gemini-2.5-flash")
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "models/text-embedding-004")
 
 RRF_K = 60
@@ -144,22 +144,9 @@ def _get_query_embedding(text: str) -> List[float]:
             raise RuntimeError("Gemini embedding trả về rỗng.")
         return embedding
 
-    # Fallback cho môi trường cũ đang dùng OpenAI.
-    api_key = _valid_env_value("OPENAI_API_KEY")
-    if not api_key:
-        raise RuntimeError(
-            "Không có embedding function khả dụng. "
-            "Hãy set EMBEDDING_PROVIDER=gemini (khuyến nghị) hoặc local/index/openai đúng cách."
-        )
-
-    from openai import OpenAI
-
-    client = OpenAI(api_key=api_key)
-    response = client.embeddings.create(
-        input=text,
-        model=EMBEDDING_MODEL,
+    raise RuntimeError(
+        "EMBEDDING_PROVIDER không hợp lệ. Dùng 'gemini' (khuyến nghị), hoặc 'local' / 'index'."
     )
-    return response.data[0].embedding
 
 
 def _get_bm25_index() -> Tuple[Any, List[Dict[str, Any]]]:
@@ -661,57 +648,20 @@ def call_llm(prompt: str) -> str:
     Gọi LLM để sinh câu trả lời.
 
     TODO Sprint 2:
-    Chọn một trong hai:
-
-    Option A — OpenAI (cần OPENAI_API_KEY):
-        from openai import OpenAI
-        client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-        response = client.chat.completions.create(
-            model=LLM_MODEL,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0,     # temperature=0 để output ổn định, dễ đánh giá
-            max_tokens=512,
-        )
-        return response.choices[0].message.content
-
-    Option B — Google Gemini (cần GOOGLE_API_KEY):
+    Gemini-only (cần GOOGLE_API_KEY):
         import google.generativeai as genai
         genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
-        model = genai.GenerativeModel("gemini-1.5-flash")
+        model = genai.GenerativeModel("gemini-2.5-flash")
         response = model.generate_content(prompt)
         return response.text
 
     Lưu ý: Dùng temperature=0 hoặc thấp để output ổn định cho evaluation.
     """
     provider = (os.getenv("LLM_PROVIDER") or "gemini").strip().lower()
-    openai_key = _valid_env_value("OPENAI_API_KEY")
     gemini_key = _valid_env_value("GOOGLE_API_KEY")
 
     if provider in {"", "auto"}:
-        if gemini_key:
-            provider = "gemini"
-        elif openai_key:
-            provider = "openai"
-        else:
-            provider = "gemini"
-
-    if provider == "openai":
-        if not openai_key:
-            raise RuntimeError(
-                "LLM_PROVIDER=openai nhưng thiếu OPENAI_API_KEY hợp lệ trong .env"
-            )
-
-        from openai import OpenAI
-
-        client = OpenAI(api_key=openai_key)
-        response = client.chat.completions.create(
-            model=LLM_MODEL,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0,
-            max_tokens=512,
-        )
-        answer = (response.choices[0].message.content or "").strip()
-        return answer or "Không đủ dữ liệu trong tài liệu được truy xuất."
+        provider = "gemini"
 
     if provider == "gemini":
         if not gemini_key:
@@ -721,7 +671,7 @@ def call_llm(prompt: str) -> str:
 
         import google.generativeai as genai
 
-        model_name = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
+        model_name = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
         genai.configure(api_key=gemini_key)
         model = genai.GenerativeModel(model_name)
         response = model.generate_content(
@@ -731,7 +681,7 @@ def call_llm(prompt: str) -> str:
         answer = (getattr(response, "text", "") or "").strip()
         return answer or "Không đủ dữ liệu trong tài liệu được truy xuất."
 
-    raise ValueError("LLM_PROVIDER không hợp lệ. Dùng 'openai' hoặc 'gemini'.")
+    raise ValueError("LLM_PROVIDER không hợp lệ. Chỉ hỗ trợ 'gemini'.")
 
 
 def rag_answer(
@@ -929,7 +879,7 @@ if __name__ == "__main__":
 
     print("\n\nViệc cần làm Sprint 2:")
     print("  1. Implement retrieve_dense() — query ChromaDB")
-    print("  2. Implement call_llm() — gọi OpenAI hoặc Gemini")
+    print("  2. Implement call_llm() — gọi Gemini")
     print("  3. Chạy rag_answer() với 3+ test queries")
     print("  4. Verify: output có citation không? Câu không có docs → abstain không?")
 
