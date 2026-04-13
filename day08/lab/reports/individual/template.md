@@ -1,8 +1,8 @@
 # Báo Cáo Cá Nhân — Lab Day 08: RAG Pipeline
 
-**Họ và tên:** ___________  
-**Vai trò trong nhóm:** Tech Lead / Retrieval Owner / Eval Owner / Documentation Owner  
-**Ngày nộp:** ___________  
+**Họ và tên:** Tạ Bảo Ngọc  
+**Vai trò trong nhóm:** Eval Owner
+**Ngày nộp:** 14/04/2026  
 **Độ dài yêu cầu:** 500–800 từ
 
 ---
