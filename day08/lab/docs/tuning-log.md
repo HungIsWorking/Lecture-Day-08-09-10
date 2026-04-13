@@ -7,7 +7,7 @@
 
 ## Baseline (Sprint 2)
 
-**Ngày:** ___________  
+**Ngày:** 13/04/2026
 **Config:**
 ```
 retrieval_mode = "dense"
