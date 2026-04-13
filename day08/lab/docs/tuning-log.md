@@ -16,7 +16,7 @@ overlap = 50 tokens
 top_k_search = 10
 top_k_select = 3
 use_rerank = False
-llm_model = "gemini-2.5-flash"
+llm_model = "gpt-4o-mini"
 ```
 
 **Scorecard Baseline:**
