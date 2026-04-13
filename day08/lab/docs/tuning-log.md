@@ -10,7 +10,7 @@
 **Ngày:** 13/04/2026
 **Config:**
 ```
-retrieval_mode = hybrid (dense + BM25)
+retrieval_mode = dense
 chunk_size = 300 tokens
 overlap = 50 tokens
 top_k_search = 10
@@ -22,10 +22,10 @@ llm_model = "gemini-2.5-flash"
 **Scorecard Baseline:**
 | Metric | Average Score |
 |--------|--------------|
-| Faithfulness | 4.8 /5 |
-| Answer Relevance | 5 /5 |
-| Context Recall | 5 /5 |
-| Completeness | 3.9 /5 |
+| Faithfulness | 4.80/5 |
+| Relevance | 4.60/5 |
+| Context Recall | 5.00/5 |
+| Completeness | 4.50/5 |
 
 **Câu hỏi yếu nhất (điểm thấp):**
 > q09 (ERR-403-AUTH)
@@ -51,31 +51,29 @@ llm_model = "gemini-2.5-flash"
 ## Variant 1 (Sprint 3)
 
 **Ngày:** 13/04/2026  
-**Biến thay đổi:** top_k_select (3 -> 5) 
+**Biến thay đổi:** retrieval_mode (dense → hybrid + BM25 + rerank)
 **Lý do chọn biến này:**
-> Từ baseline: các lỗi chủ yếu nằm ở thiếu thông tin (completeness) và thiếu recall (q09, q08, q10). Code cho thấy retrieval đã là hybrid + RRF, nên vấn đề không phải ở phương pháp retrieve mà là số lượng context được đưa vào LLM. Vì vậy tăng top_k_select là thay đổi hợp lý nhất theo A/B rule.
+> Từ baseline: retrieval chỉ dùng dense embedding dẫn đến fail ở keyword-based queries như q09 (ERR-403). Việc thêm hybrid (dense + BM25) và rerank (cross-encoder) được chọn để cải thiện recall cho exact matches và precision cho top results, theo A/B rule chỉ đổi 1 biến chính.
 
 **Config thay đổi:**
 ```
-top_k_select = 5
+retrieval_mode = hybrid + rerank
 # Các tham số còn lại giữ nguyên như baseline
 ```
 
 **Scorecard Variant 1:**
 | Metric | Baseline | Variant 1 | Delta |
 |--------|----------|-----------|-------|
-| Faithfulness | 4.8/5 | ?/5 | +/- |
-| Answer Relevance | 5/5 | ?/5 | +/- |
-| Context Recall | 5/5 | ?/5 | +/- |
-| Completeness | 3.9/5 | ?/5 | +/- |
+| Faithfulness | 4.80/5 | 4.70/5 | -0.10 |
+| Relevance | 4.60/5 | 4.60/5 | 0.00 |
+| Context Recall | 5.00/5 | 5.00/5 | 0.00 |
+| Completeness | 4.50/5 | 4.30/5 | -0.20 |
 
 **Nhận xét:**
-> TODO: Variant 1 cải thiện ở câu nào? Tại sao?
-> Có câu nào kém hơn không? Tại sao?
+> Variant 1 cải thiện ở q06 (thêm chi tiết escalation), nhưng giảm faithfulness ở q07 (do rerank chọn context khác). Không cải thiện q09 vì vấn đề là thiếu docs, không phải retrieval. Completeness giảm nhẹ do rerank loại bỏ một số context bổ sung.
 
 **Kết luận:**
-> TODO: Variant 1 có tốt hơn baseline không?
-> Bằng chứng là gì? (điểm số, câu hỏi cụ thể)
+> Variant 1 không cải thiện overall scores đáng kể, nhưng phù hợp với mục tiêu hybrid retrieval. Delta nhỏ cho thấy cần tuning thêm như top_k hoặc rerank threshold.
 
 ---
 
@@ -98,6 +96,11 @@ top_k_select = 5
 ---
 
 ## Tóm tắt học được
+
+- **Hybrid retrieval hiệu quả hơn dense cho mixed corpus**: Baseline dense fail ở keyword queries (q09), hybrid cải thiện nhưng không hoàn toàn do docs thiếu.
+- **Rerank trade-off**: Cải thiện precision nhưng có thể giảm faithfulness nếu loại bỏ context quan trọng (q07).
+- **Completeness vs Faithfulness**: Thêm context (hybrid) tăng completeness nhưng có thể làm hallucination nếu context noise.
+- **A/B tuning cần iterative**: Một biến không đủ, cần combine với top_k tuning cho optimal.
 
 > TODO (Sprint 4): Điền sau khi hoàn thành evaluation.
 

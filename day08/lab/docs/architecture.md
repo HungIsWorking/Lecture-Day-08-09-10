@@ -63,17 +63,17 @@
 | Strategy | Hybrid (Dense + BM25) | Thêm keyword matching |
 | Top-k search | 10 | Giữ nguyên |
 | Top-k select | 3 | Giữ nguyên |
-| Rerank | Cross-encoder (MiniLM) | Cải thiện ranking |
-| Query transform | expansion / HyDE / decomposition | Tăng recall |
+| Rerank | Cross-encoder (MiniLM) | Thêm rerank để cải thiện ranking |
+| Query transform | Không | Không sử dụng |
 
 **Lý do chọn variant này:**
 > Hybrid + rerank được chọn vì:
 > Corpus có mix giữa:
 > -FAQ (natural language)
 > -Policy (structured + keyword-heavy: SLA, P1, ERR-403, Level 3)
-> Dense retrieval đơn thuần: tốt cho semantic question, yếu với exact keyword match (log đã thấy “ERR-403-AUTH” fail)
+> Dense retrieval đơn thuần: tốt cho semantic question, yếu với exact keyword match (như q09 ERR-403-AUTH fail)
 > BM25: tăng recall cho keyword-based queries
-> Rerank: giảm noise từ dense + BM25 union, cải thiện precision trước khi đưa vào LLM
+> Rerank: giảm noise từ hybrid union, cải thiện precision trước khi đưa vào LLM
 
 ---
 
@@ -98,6 +98,10 @@ Answer:
 ```
 
 ### LLM Configuration
+- **Model**: gemini-2.5-flash
+- **Temperature**: 0 (để đảm bảo consistency)
+- **Max tokens**: 512
+- **Grounding instructions**: Chỉ trả lời từ context, cite source, abstain nếu không đủ info
 | Tham số | Giá trị |
 |---------|---------|
 | Model | gemini-2.5-flash |

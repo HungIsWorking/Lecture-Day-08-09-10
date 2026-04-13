@@ -7,10 +7,11 @@
 | Nguyễn Tuấn Hưng | Tech Lead | ___ |
 | Nguyễn Đăng Hải | Retrieval Owner | ___ |
 | Tạ Bảo Ngọc | Eval Owner | ___ |
+| Thái Minh Kiên | Eval Owner + Retrieval owner| ___ |
 | Lê Minh Hoàng | Documentation Owner | ___ |
 
-**Ngày nộp:** ___________  
-**Repo:** ___________  
+**Ngày nộp:** 13/04/2026  
+**Repo:** https://github.com/HoangLeminh17/Lecture-Day-08-09-10/tree/c47d0c34ddc6a54bab3df0c3892311452c3adde5/day08
 **Độ dài khuyến nghị:** 600–900 từ
 
 ---
@@ -30,17 +31,12 @@
 > Pipeline của nhóm được xây dựng theo kiến trúc RAG tiêu chuẩn gồm ba bước: indexing, retrieval và generation. Ở bước indexing, tài liệu .txt được đọc từ thư mục data/docs, sau đó được preprocess và chia thành các chunk với kích thước trung bình để đảm bảo cân bằng giữa ngữ cảnh và độ chính xác khi retrieve.
 
 **Chunking decision:**
-> Nhóm sử dụng chunk_size = 300 tokens và overlap = 50 tokens
+> Nhóm sử dụng chunk_size = 300 tokens và overlap = 50 tokens để cân bằng giữa việc giữ ngữ cảnh đầy đủ và tránh chunk quá dài, giúp retrieval hiệu quả hơn.
 
-_________________
-
-**Embedding model:** models/gemini-embedding-001
-
-_________________
+**Embedding model:** gemini-embedding-001
 
 **Retrieval variant (Sprint 3):**
-> Nêu rõ variant đã chọn (hybrid / rerank / query transform) và lý do ngắn gọn.
-> Nhóm sử dụng hybrid retrieval (dense + BM25) kết hợp bằng RRF. Lý do là corpus chứa cả nội dung tự nhiên (policy) và các token đặc biệt (mã lỗi, tên riêng), nên cần kết hợp semantic matching và keyword matching để tăng recall.
+> Nhóm sử dụng hybrid retrieval (dense + BM25) kết hợp bằng Reciprocal Rank Fusion (RRF), với rerank bằng cross-encoder MiniLM để cải thiện precision. Lý do là corpus chứa cả văn bản tự nhiên (policy) và token đặc biệt (mã lỗi như ERR-403), nên cần kết hợp semantic matching và keyword matching để tăng recall và accuracy.
 _________________
 
 ---
@@ -81,13 +77,13 @@ Trong baseline, q09 (ERR-403) có Context Recall = None, cho thấy dense retrie
 > - Câu nào pipeline fail? Root cause ở đâu (indexing / retrieval / generation)?
 > - Câu gq07 (abstain) — pipeline xử lý thế nào?
 
-**Ước tính điểm raw:** ___ / 98
+**Ước tính điểm raw:** 185 / 200
 
-**Câu tốt nhất:** ID: ___ — Lý do: ___________________
+**Câu tốt nhất:** q01 — Lý do: Pipeline xử lý hoàn hảo với tất cả metrics đạt 5/5, trả lời chính xác và đầy đủ về SLA ticket P1.
 
-**Câu fail:** ID: ___ — Root cause: ___________________
+**Câu fail:** q09 — Root cause: Retrieval không tìm thấy context phù hợp vì ERR-403-AUTH không có trong docs, dẫn đến abstain nhưng relevance thấp do không giải thích thêm.
 
-**Câu gq07 (abstain):** ___________________
+**Câu gq07 (abstain):** q09 là câu abstain, pipeline trả lời "Tôi không tìm thấy thông tin" đúng theo prompt grounding.
 
 ---
 
@@ -95,9 +91,14 @@ Trong baseline, q09 (ERR-403) có Context Recall = None, cho thấy dense retrie
 
 > Dựa vào `docs/tuning-log.md`. Tóm tắt kết quả A/B thực tế của nhóm.
 
-**Biến đã thay đổi (chỉ 1 biến):** ___________________
+**Biến đã thay đổi (chỉ 1 biến):** Retrieval strategy (dense only → hybrid + BM25 + rerank)
 
 | Metric | Baseline | Variant | Delta |
+|--------|----------|-----------|-------|
+| Faithfulness | 4.80/5 | 4.70/5 | -0.10 |
+| Answer Relevance | 4.60/5 | 4.60/5 | 0.00 |
+| Context Recall | 5.00/5 | 5.00/5 | 0.00 |
+| Completeness | 4.50/5 | 4.30/5 | -0.20 |
 |--------|---------|---------|-------|
 | ___ | ___ | ___ | ___ |
 | ___ | ___ | ___ | ___ |
