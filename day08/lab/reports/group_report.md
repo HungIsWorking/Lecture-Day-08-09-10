@@ -11,8 +11,8 @@
 | Trần Trung Hậu | Retrieval owner| ___ |
 | Lê Minh Hoàng | Documentation Owner | ___ |
 
-**Ngày nộp:** ___________  
-**Repo:** ___________  
+**Ngày nộp:** 13/04/2026 
+**Repo:** https://github.com/HoangLeminh17/Lecture-Day-08-09-10/tree/main/day08 
 **Độ dài khuyến nghị:** 600–900 từ
 
 ---
