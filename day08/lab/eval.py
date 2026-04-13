@@ -19,9 +19,13 @@ A/B Rule (từ slide):
 
 import json
 import csv
+import os
+import re
+import time
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 from datetime import datetime
+import google.generativeai as genai
 from rag_answer import rag_answer
 
 # =============================================================================
@@ -55,6 +59,67 @@ VARIANT_CONFIG = {
 # SCORING FUNCTIONS
 # 4 metrics từ slide: Faithfulness, Answer Relevance, Context Recall, Completeness
 # =============================================================================
+
+def _call_judge_llm(prompt: str) -> Dict[str, Any]:
+    """
+    Sử dụng Gemini làm giám khảo (Judge) và trả về kết quả định dạng JSON.
+    """
+    api_key = (os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY") or "").strip()
+    if not api_key:
+        raise RuntimeError("Thiếu GOOGLE_API_KEY hoặc GEMINI_API_KEY để chạy Gemini judge.")
+
+    model_name = os.getenv("JUDGE_MODEL", os.getenv("LLM_MODEL", "gemini-2.5-flash")).strip()
+    max_retries = int(os.getenv("JUDGE_MAX_RETRIES", "3"))
+    inter_call_delay = float(os.getenv("JUDGE_SLEEP_SECONDS", "0.8"))
+
+    genai.configure(api_key=api_key)
+    model = genai.GenerativeModel(
+        model_name=model_name,
+        system_instruction=(
+            "You are an objective AI evaluator. "
+            "Return strict JSON only with keys: score (1-5 integer) and notes (string)."
+        ),
+    )
+
+    last_error = None
+    for attempt in range(1, max_retries + 1):
+        try:
+            response = model.generate_content(
+                prompt,
+                generation_config={"temperature": 0, "response_mime_type": "application/json"},
+            )
+            raw_text = (getattr(response, "text", "") or "").strip()
+            if not raw_text:
+                raise RuntimeError("Gemini judge trả về rỗng.")
+
+            # Fallback parser nếu model bọc JSON trong markdown/codefence.
+            try:
+                data = json.loads(raw_text)
+            except json.JSONDecodeError:
+                match = re.search(r"\{[\s\S]*\}", raw_text)
+                if not match:
+                    raise RuntimeError(f"Không parse được JSON từ judge output: {raw_text[:200]}")
+                data = json.loads(match.group(0))
+
+            if inter_call_delay > 0:
+                time.sleep(inter_call_delay)
+            return data
+        except Exception as e:
+            last_error = e
+            # Backoff nhẹ khi dính rate limit/quota.
+            retry_delay = min(12, 2 * attempt)
+            if attempt < max_retries:
+                time.sleep(retry_delay)
+
+    raise RuntimeError(f"Gemini judge thất bại sau {max_retries} lần thử: {last_error}")
+
+
+def _normalize_score(value: Any) -> Optional[int]:
+    try:
+        score = int(round(float(value)))
+    except (TypeError, ValueError):
+        return None
+    return max(1, min(5, score))
 
 def score_faithfulness(
     answer: str,
@@ -90,11 +155,39 @@ def score_faithfulness(
     """
     # TODO Sprint 4: Implement scoring
     # Tạm thời trả về None (yêu cầu chấm thủ công)
-    return {
-        "score": None,
-        "notes": "TODO: Chấm thủ công hoặc implement LLM-as-Judge",
-    }
+    
+    context = "\n\n".join([c.get("text", "") for c in chunks_used])
+    prompt = f"""
+    Evaluate the faithfulness of the following answer based ONLY on the provided context.
+    Hãy đánh giá mức độ faithfulness theo thang điểm dưới đây của câu trả lời sau dựa trên context đã cho
+    
+    Context:
+    {context}
+    
+    Answer:
+    {answer}
+    
+    Thang điểm 1-5:
+      5: Mọi thông tin trong answer đều có trong retrieved chunks
+      4: Gần như hoàn toàn grounded, 1 chi tiết nhỏ chưa chắc chắn
+      3: Phần lớn grounded, một số thông tin có thể từ model knowledge
+      2: Nhiều thông tin không có trong retrieved chunks
+      1: Câu trả lời không grounded, phần lớn là model bịa
 
+    Trả lại kết quả dưới dạng json:
+    {{"score": int, "notes": string}}
+    """
+    try:
+        result = _call_judge_llm(prompt)
+        return {
+            "score": _normalize_score(result.get("score")),
+            "notes": result.get("notes") or result.get("reason", "No reasoning provided"),
+        }
+    except Exception as e:
+        return {
+            "score": None,
+            "notes": f"Error in LLM Judge: {str(e)}",
+        }
 
 def score_answer_relevance(
     query: str,
@@ -113,10 +206,37 @@ def score_answer_relevance(
 
     TODO Sprint 4: Implement tương tự score_faithfulness
     """
-    return {
-        "score": None,
-        "notes": "TODO: Implement score_answer_relevance",
-    }
+    prompt = f"""
+    Hãy đánh giá mức độ relevance theo thang điểm dưới đây của câu trả lời sau dựa trên context đã cho
+    
+    Question:
+    {query}
+    
+    Answer:
+    {answer}
+    
+    
+    Thang điểm 1-5:
+      5: Answer trả lời trực tiếp và đầy đủ câu hỏi
+      4: Trả lời đúng nhưng thiếu vài chi tiết phụ
+      3: Trả lời có liên quan nhưng chưa đúng trọng tâm
+      2: Trả lời lạc đề một phần
+      1: Không trả lời câu hỏi
+
+    Trả lại kết quả dưới dạng json:
+    {{"score": int, "notes": string}}
+    """
+    try:
+        result = _call_judge_llm(prompt)
+        return {
+            "score": _normalize_score(result.get("score")),
+            "notes": result.get("notes") or result.get("reason", "No reasoning provided"),
+        }
+    except Exception as e:
+        return {
+            "score": None,
+            "notes": f"Error in LLM Judge: {str(e)}",
+        }
 
 
 def score_context_recall(
@@ -198,10 +318,39 @@ def score_completeness(
          Rate completeness 1-5. Are all key points covered?
          Output: {'score': int, 'missing_points': [str]}"
     """
-    return {
-        "score": None,
-        "notes": "TODO: Implement score_completeness (so sánh với expected_answer)",
-    }
+    prompt = f"""
+    Evaluate the completeness of the following answer by comparing it to the expected answer.
+    Đánh giá mức độ hoàn chỉnh của câu trả lời sau dựa trên expected_answer
+    Question:
+    {query}
+    
+    Expected Answer:
+    {expected_answer}
+    
+    Model Answer:
+    {answer}
+    
+    Thang điểm 1-5:
+      5: Answer bao gồm đủ tất cả điểm quan trọng trong expected_answer
+      4: Thiếu 1 chi tiết nhỏ
+      3: Thiếu một số thông tin quan trọng
+      2: Thiếu nhiều thông tin quan trọng
+      1: Thiếu phần lớn nội dung cốt lõi
+
+    Trả câu trả lời theo dạng json:
+    {{'score': int, 'missing_points': [str]}}
+    """
+    try:
+        result = _call_judge_llm(prompt)
+        return {
+            "score": _normalize_score(result.get("score")),
+            "notes": result.get("notes") or result.get("reason", "No reasoning provided"),
+        }
+    except Exception as e:
+        return {
+            "score": None,
+            "notes": f"Error in LLM Judge: {str(e)}",
+        }
 
 
 # =============================================================================
@@ -354,11 +503,11 @@ def compare_ab(
 
         b_avg = sum(b_scores) / len(b_scores) if b_scores else None
         v_avg = sum(v_scores) / len(v_scores) if v_scores else None
-        delta = (v_avg - b_avg) if (b_avg and v_avg) else None
+        delta = (v_avg - b_avg) if (b_avg is not None and v_avg is not None) else None
 
-        b_str = f"{b_avg:.2f}" if b_avg else "N/A"
-        v_str = f"{v_avg:.2f}" if v_avg else "N/A"
-        d_str = f"{delta:+.2f}" if delta else "N/A"
+        b_str = f"{b_avg:.2f}" if b_avg is not None else "N/A"
+        v_str = f"{v_avg:.2f}" if v_avg is not None else "N/A"
+        d_str = f"{delta:+.2f}" if delta is not None else "N/A"
 
         print(f"{metric:<20} {b_str:>10} {v_str:>10} {d_str:>8}")
 
@@ -488,23 +637,23 @@ if __name__ == "__main__":
 
     # --- Chạy Variant (sau khi Sprint 3 hoàn thành) ---
     # TODO Sprint 4: Uncomment sau khi implement variant trong rag_answer.py
-    # print("\n--- Chạy Variant ---")
-    # variant_results = run_scorecard(
-    #     config=VARIANT_CONFIG,
-    #     test_questions=test_questions,
-    #     verbose=True,
-    # )
-    # variant_md = generate_scorecard_summary(variant_results, VARIANT_CONFIG["label"])
-    # (RESULTS_DIR / "scorecard_variant.md").write_text(variant_md, encoding="utf-8")
+    print("\n--- Chạy Variant ---")
+    variant_results = run_scorecard(
+        config=VARIANT_CONFIG,
+        test_questions=test_questions,
+        verbose=True,
+    )
+    variant_md = generate_scorecard_summary(variant_results, VARIANT_CONFIG["label"])
+    (RESULTS_DIR / "scorecard_variant.md").write_text(variant_md, encoding="utf-8")
 
     # --- A/B Comparison ---
     # TODO Sprint 4: Uncomment sau khi có cả baseline và variant
-    # if baseline_results and variant_results:
-    #     compare_ab(
-    #         baseline_results,
-    #         variant_results,
-    #         output_csv="ab_comparison.csv"
-    #     )
+    if baseline_results and variant_results:
+        compare_ab(
+            baseline_results,
+            variant_results,
+            output_csv="ab_comparison.csv"
+        )
 
     print("\n\nViệc cần làm Sprint 4:")
     print("  1. Hoàn thành Sprint 2 + 3 trước")
