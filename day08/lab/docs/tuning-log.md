@@ -10,7 +10,7 @@
 **Ngày:** 13/04/2026
 **Config:**
 ```
-retrieval_mode = "dense"
+retrieval_mode = hybrid (dense + BM25)
 chunk_size = 300 tokens
 overlap = 50 tokens
 top_k_search = 10
@@ -51,25 +51,23 @@ llm_model = "gemini-2.5-flash"
 ## Variant 1 (Sprint 3)
 
 **Ngày:** 13/04/2026  
-**Biến thay đổi:** ___________  
+**Biến thay đổi:** top_k_select (3 -> 5) 
 **Lý do chọn biến này:**
-> TODO: Giải thích theo evidence từ baseline results.
-> Ví dụ: "Chọn hybrid vì q07 (alias query) và q09 (mã lỗi ERR-403) đều thất bại với dense.
-> Corpus có cả ngôn ngữ tự nhiên (policy) lẫn tên riêng/mã lỗi (ticket code, SLA label)."
+> Từ baseline: các lỗi chủ yếu nằm ở thiếu thông tin (completeness) và thiếu recall (q09, q08, q10). Code cho thấy retrieval đã là hybrid + RRF, nên vấn đề không phải ở phương pháp retrieve mà là số lượng context được đưa vào LLM. Vì vậy tăng top_k_select là thay đổi hợp lý nhất theo A/B rule.
 
 **Config thay đổi:**
 ```
-retrieval_mode = "hybrid"   # hoặc biến khác
+top_k_select = 5
 # Các tham số còn lại giữ nguyên như baseline
 ```
 
 **Scorecard Variant 1:**
 | Metric | Baseline | Variant 1 | Delta |
 |--------|----------|-----------|-------|
-| Faithfulness | ?/5 | ?/5 | +/- |
-| Answer Relevance | ?/5 | ?/5 | +/- |
-| Context Recall | ?/5 | ?/5 | +/- |
-| Completeness | ?/5 | ?/5 | +/- |
+| Faithfulness | 4.8/5 | ?/5 | +/- |
+| Answer Relevance | 5/5 | ?/5 | +/- |
+| Context Recall | 5/5 | ?/5 | +/- |
+| Completeness | 3.9/5 | ?/5 | +/- |
 
 **Nhận xét:**
 > TODO: Variant 1 cải thiện ở câu nào? Tại sao?
