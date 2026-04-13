@@ -60,21 +60,32 @@ VARIANT_CONFIG = {
 
 def _call_judge_llm(prompt: str) -> Dict[str, Any]:
     """
-    Helper function to call LLM as a judge and return a JSON response.
+    Sử dụng Gemini làm giám khảo (Judge) và trả về kết quả định dạng JSON.
     """
-    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-    model = os.getenv("LLM_MODEL", "gpt-4o-mini")
+    # Cấu hình API Key
+    genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
     
-    response = client.chat.completions.create(
-        model=model,
-        messages=[
-            {"role": "system", "content": "You are an objective AI evaluator. Return only JSON."},
-            {"role": "user", "content": prompt}
-        ],
-        temperature=0,
-        response_format={"type": "json_object"}
+    # Lấy tên model từ biến môi trường, mặc định là gemini-1.5-flash
+    model_name = os.getenv("LLM_MODEL", "gemini-1.5-flash")
+    
+    # Khởi tạo model
+    model = genai.GenerativeModel(
+        model_name=model_name,
+        generation_config={
+            "temperature": 0,
+            "response_mime_type": "application/json"  # Ép phản hồi trả về định dạng JSON
+        },
+        system_instruction="You are an objective AI evaluator. Return only JSON."
     )
-    return json.loads(response.choices[0].message.content)
+
+    # Gọi API
+    response = model.generate_content(prompt)
+    
+    try:
+        return json.loads(response.text)
+    except json.JSONDecodeError:
+        # Trường hợp dự phòng nếu model không trả về đúng định dạng JSON
+        return {"error": "Failed to decode JSON", "raw_content": response.text}
 
 def score_faithfulness(
     answer: str,
