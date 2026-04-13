@@ -31,7 +31,7 @@ CHROMA_DB_DIR = Path(__file__).parent / "chroma_db"
 
 # TODO Sprint 1: Điều chỉnh chunk size và overlap theo quyết định của nhóm
 # Gợi ý từ slide: chunk 300-500 tokens, overlap 50-80 tokens
-CHUNK_SIZE = 400       # tokens (ước lượng bằng số ký tự / 4)
+CHUNK_SIZE = 320 # tokens (ước lượng bằng số ký tự / 4)
 CHUNK_OVERLAP = 80     # tokens overlap giữa các chunk
 
 
@@ -68,6 +68,7 @@ def preprocess_document(raw_text: str, filepath: str) -> Dict[str, Any]:
         "effective_date": "unknown",
         "access": "internal",
     }
+    
     content_lines = []
     header_done = False
 
@@ -98,6 +99,7 @@ def preprocess_document(raw_text: str, filepath: str) -> Dict[str, Any]:
     # TODO: Thêm bước normalize text nếu cần
     # Gợi ý: bỏ ký tự đặc biệt thừa, chuẩn hóa dấu câu
     cleaned_text = re.sub(r"\n{3,}", "\n\n", cleaned_text)  # max 2 dòng trống liên tiếp
+    cleaned_text = re.sub(r"[.,;:]\s*", r"\g<0> ", cleaned_text) # thêm space sau dấu câu
 
     return {
         "text": cleaned_text,
@@ -137,8 +139,10 @@ def chunk_document(doc: Dict[str, Any]) -> List[Dict[str, Any]]:
 
     # TODO: Implement chunking theo section heading
     # Bước 1: Split theo heading pattern "=== ... ==="
-    sections = re.split(r"(===.*?===)", text)
+    sections = re.split(r"(===.*?===)", text)    
 
+
+    
     current_section = "General"
     current_section_text = ""
 
@@ -196,23 +200,106 @@ def _split_by_size(
     # paragraphs = text.split("\n\n")
     # Ghép paragraphs lại cho đến khi gần đủ chunk_chars
     # Lấy overlap từ đoạn cuối chunk trước
+    
+    paragraphs = text.split("\n\n")
     chunks = []
-    start = 0
-    while start < len(text):
-        end = min(start + chunk_chars, len(text))
-        chunk_text = text[start:end]
 
-        # TODO: Tìm ranh giới tự nhiên gần nhất (dấu xuống dòng, dấu chấm)
-        # thay vì cắt giữa câu
+    i = 0
+    while i < len(paragraphs):
+        current_paragraphs = []
+        current_len = 0
 
+        # Bước 2: Ghép paragraphs cho đến khi gần đủ size
+        while i < len(paragraphs) and current_len + len(paragraphs[i]) <= chunk_chars:
+            para = paragraphs[i]
+            current_paragraphs.append(para)
+            current_len += len(para) + 2  # +2 cho "\n\n"
+            i += 1
+
+        # Nếu một paragraph duy nhất đã vượt chunk_chars → cắt nhỏ hơn
+        if not current_paragraphs and i < len(paragraphs):
+            long_para = paragraphs[i]
+            sub_chunks = _split_long_text(long_para, chunk_chars, overlap_chars)
+            for sub in sub_chunks:
+                chunks.append({
+                    "text": sub,
+                    "metadata": {**base_metadata, "section": section},
+                })
+            i += 1
+            continue
+
+        # Tạo chunk từ các paragraphs đã ghép
+        chunk_text = "\n\n".join(current_paragraphs)
         chunks.append({
             "text": chunk_text,
             "metadata": {**base_metadata, "section": section},
         })
-        # Overlap: lùi lại overlap_chars để chunk sau có ngữ cảnh từ chunk trước
-        start = end - overlap_chars
+
+        # Bước 3: Overlap — lùi lại 1 paragraph để chunk sau có ngữ cảnh
+        overlap_paragraphs = max(1, len(current_paragraphs) - 1)
+        i = i - overlap_paragraphs
+        if i < 0:
+            i = 0
 
     return chunks
+
+
+def _split_long_text(text: str, max_chars: int, overlap_chars: int) -> List[str]:
+    """
+    Helper: Cắt text dài (không có paragraph) bằng ranh giới tự nhiên.
+    """
+    chunks = []
+    start = 0
+    while start < len(text):
+        end = min(start + max_chars, len(text))
+
+        # Tìm ranh giới tự nhiên gần nhất (dấu xuống dòng, dấu chấm)
+        natural_end = _find_natural_boundary(text, start, end)
+
+        chunk = text[start:natural_end].strip()
+        if chunk:
+            chunks.append(chunk)
+
+        # Overlap: lùi lại overlap_chars ký tự từ cuối chunk
+        start = natural_end - overlap_chars
+        if start <= chunks[-1].find(text[chunks[-1].find(chunk) + len(chunk):]) if chunks else start:
+            pass
+        if start <= 0:
+            start = natural_end
+
+    return chunks
+
+
+def _find_natural_boundary(text: str, start: int, end: int) -> int:
+    """
+    Tìm vị trí cắt tự nhiên nhất trong khoảng [start, end].
+    Ưu tiên: dấu xuống dòng > dấu chấm > ký tự trắng
+    """
+    search_text = text[start:end]
+
+    # Ưu tiên 1: Tìm dấu xuống dòng trong 30% cuối của chunk
+    search_start = start + int((end - start) * 0.7)
+    last_newline = text.rfind('\n', search_start, end)
+    if last_newline != -1:
+        return last_newline + 1
+
+    # Ưu tiên 2: Tìm dấu chấm + space (kết thúc câu) trong 20% cuối
+    search_start = start + int((end - start) * 0.8)
+    last_period = text.rfind('. ', search_start, end)
+    if last_period != -1:
+        return last_period + 2
+
+    # Ưu tiên 3: Tìm dấu phẩy hoặc space trong 10% cuối
+    last_comma = text.rfind(', ', search_start, end)
+    last_space = text.rfind(' ', search_start, end)
+    if last_comma != -1:
+        return last_comma + 2
+    if last_space != -1:
+        return last_space + 1
+
+    # Fallback: cắt tại vị trí end
+    return end
+
 
 
 # =============================================================================
@@ -241,10 +328,11 @@ def get_embedding(text: str) -> List[float]:
         model = SentenceTransformer("paraphrase-multilingual-MiniLM-L12-v2")
         return model.encode(text).tolist()
     """
-    raise NotImplementedError(
-        "TODO: Implement get_embedding().\n"
-        "Chọn Option A (OpenAI) hoặc Option B (Sentence Transformers) trong TODO comment."
-    )
+    from sentence_transformers import SentenceTransformer
+    
+    model = SentenceTransformer("paraphrase-multilingual-MiniLM-L12-v2")
+    
+    return model.encode(text).tolist()
 
 
 def build_index(docs_dir: Path = DOCS_DIR, db_dir: Path = CHROMA_DB_DIR) -> None:
@@ -277,6 +365,12 @@ def build_index(docs_dir: Path = DOCS_DIR, db_dir: Path = CHROMA_DB_DIR) -> None
     # TODO: Khởi tạo ChromaDB
     # client = chromadb.PersistentClient(path=str(db_dir))
     # collection = client.get_or_create_collection(...)
+
+    client = chromadb.PersistentClient(path=str(db_dir))
+    collection = client.get_or_create_collection(
+        name="rag_lab",
+        metadata={"hnsw:space": "cosine"}
+    )
 
     total_chunks = 0
     doc_files = list(docs_dir.glob("*.txt"))
