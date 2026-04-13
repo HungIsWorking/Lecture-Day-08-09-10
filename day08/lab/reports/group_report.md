@@ -11,8 +11,8 @@
 | Trần Trung Hậu | Retrieval owner| ___ |
 | Lê Minh Hoàng | Documentation Owner | ___ |
 
-**Ngày nộp:** 13/04/2026  
-**Repo:** https://github.com/HoangLeminh17/Lecture-Day-08-09-10/tree/c47d0c34ddc6a54bab3df0c3892311452c3adde5/day08
+**Ngày nộp:** ___________  
+**Repo:** ___________  
 **Độ dài khuyến nghị:** 600–900 từ
 
 ---
@@ -32,12 +32,12 @@
 > Pipeline của nhóm được xây dựng theo kiến trúc RAG tiêu chuẩn gồm ba bước: indexing, retrieval và generation. Ở bước indexing, tài liệu .txt được đọc từ thư mục data/docs, sau đó được preprocess và chia thành các chunk với kích thước trung bình để đảm bảo cân bằng giữa ngữ cảnh và độ chính xác khi retrieve.
 
 **Chunking decision:**
-> Nhóm sử dụng chunk_size = 300 tokens và overlap = 50 tokens để cân bằng giữa việc giữ ngữ cảnh đầy đủ và tránh chunk quá dài, giúp retrieval hiệu quả hơn.
+> Nhóm sử dụng chunk_size = 300 tokens (khoảng 1200 ký tự) và overlap = 50 tokens (khoảng 200 ký tự). Chiến lược cắt dựa trên Section và Paragraph để giữ trọn vẹn ngữ cảnh của các điều khoản.
 
-**Embedding model:** gemini-embedding-001
+**Embedding model:** Local (`paraphrase-multilingual-MiniLM-L12-v2`)
 
 **Retrieval variant (Sprint 3):**
-> Nhóm sử dụng hybrid retrieval (dense + BM25) kết hợp bằng Reciprocal Rank Fusion (RRF), với rerank bằng cross-encoder MiniLM để cải thiện precision. Lý do là corpus chứa cả văn bản tự nhiên (policy) và token đặc biệt (mã lỗi như ERR-403), nên cần kết hợp semantic matching và keyword matching để tăng recall và accuracy.
+> Nhóm sử dụng Hybrid Retrieval (Dense + BM25) kết hợp với Rerank (Cross-Encoder). Lý do là corpus chứa nhiều thuật ngữ chuyên ngành và mã lỗi (như ERR-403) mà tìm kiếm semantic đôi khi bỏ lỡ; việc thêm Rerank giúp lọc nhiễu khi tăng số lượng chunk (k=5) cung cấp cho LLM.
 _________________
 
 ---
@@ -67,7 +67,7 @@ Nhóm chọn hybrid retrieval kết hợp bằng Reciprocal Rank Fusion (RRF). L
 
 **Bằng chứng từ scorecard/tuning-log:**
 
-Trong baseline, q09 (ERR-403) có Context Recall = None, cho thấy dense retrieval không đủ. Ngoài ra, các câu như q08, q10 bị thiếu thông tin (completeness thấp), cho thấy cần tăng khả năng retrieve đa dạng context. Điều này củng cố quyết định sử dụng hybrid thay vì chỉ dense.
+Trong baseline, **q09** (ERR-403-AUTH) có Context Recall = 0, cho thấy dense retrieval không bắt được mã lỗi chính xác. Ngoài ra, các câu như **q01** và **q08** có điểm Completeness thấp (3.0), do `top_k_select=3` không đủ cung cấp đầy đủ thông tin về thời gian xử lý và điều kiện làm remote. Khi chuyển sang Hybrid và tăng `k=5`, Completeness của q01 và q08 đã cải thiện rõ rệt, nhưng lại gặp lỗi nhiễu ở **q07** (giảm Faithfulness). Việc áp dụng thêm Rerank ở Variant 2 đã giúp cân bằng lại, đưa Faithfulness lên 3.90 và Answer Relevance lên 3.90.
 
 ---
 
@@ -78,13 +78,13 @@ Trong baseline, q09 (ERR-403) có Context Recall = None, cho thấy dense retrie
 > - Câu nào pipeline fail? Root cause ở đâu (indexing / retrieval / generation)?
 > - Câu gq07 (abstain) — pipeline xử lý thế nào?
 
-**Ước tính điểm raw:** 185 / 200
+**Ước tính điểm raw:** 92 / 100 (Dựa trên điểm trung bình Faithfulness và Relevance của Variant)
 
-**Câu tốt nhất:** q01 — Lý do: Pipeline xử lý hoàn hảo với tất cả metrics đạt 5/5, trả lời chính xác và đầy đủ về SLA ticket P1.
+**Câu tốt nhất:** ID: gq04 — Lý do: Câu hỏi về chính sách hoàn tiền đạt điểm tuyệt đối (5/5/5/5) ở cả 4 tiêu chí. Hệ thống truy xuất được đúng điều khoản và đưa ra câu trả lời đầy đủ, chính xác.
 
-**Câu fail:** q09 — Root cause: Retrieval không tìm thấy context phù hợp vì ERR-403-AUTH không có trong docs, dẫn đến abstain nhưng relevance thấp do không giải thích thêm.
+**Câu fail:** ID: gq07 — Root cause: Đây là câu hỏi nằm trong category "Insufficient Context" (không có dữ liệu trong kho tài liệu). Hệ thống không thực hiện tốt việc "abstain" (từ chối trả lời), dẫn đến điểm Faithfulness và Relevance thấp (1/5) do trả lời không grounded.
 
-**Câu gq07 (abstain):** q09 là câu abstain, pipeline trả lời "Tôi không tìm thấy thông tin" đúng theo prompt grounding.
+**Câu gq07 (abstain):** Mặc dù pipeline đã được thiết kế để trả lời "Tôi không biết" khi thiếu thông tin, nhưng thực tế kết quả tại gq07 cho thấy hệ thống vẫn cố gắng đưa ra thông tin không có trong context (hallucination) hoặc trả lời quá mơ hồ, dẫn đến điểm số thấp nhất trong bộ test.
 
 ---
 
@@ -92,22 +92,17 @@ Trong baseline, q09 (ERR-403) có Context Recall = None, cho thấy dense retrie
 
 > Dựa vào `docs/tuning-log.md`. Tóm tắt kết quả A/B thực tế của nhóm.
 
-**Biến đã thay đổi (chỉ 1 biến):** Retrieval strategy (dense only → hybrid + BM25 + rerank)
+**Biến đã thay đổi (chỉ 1 biến):** `use_rerank = True` (Sử dụng Cross-Encoder để sắp xếp lại 5 context hàng đầu).
 
-| Metric | Baseline | Variant | Delta |
-|--------|----------|-----------|-------|
-| Faithfulness | 4.80/5 | 4.70/5 | -0.10 |
-| Answer Relevance | 4.60/5 | 4.60/5 | 0.00 |
-| Context Recall | 5.00/5 | 5.00/5 | 0.00 |
-| Completeness | 4.50/5 | 4.30/5 | -0.20 |
+| Metric | Baseline | Variant (V2) | Delta |
 |--------|---------|---------|-------|
-| ___ | ___ | ___ | ___ |
-| ___ | ___ | ___ | ___ |
+| Faithfulness | 3.82 | 3.90 | +0.08 |
+| Answer Relevance | 3.91 | 3.90 | -0.01 |
+| Context Recall | 5.0 | 5.0 | 0.0 |
+| Completeness | 3.00 | 3.60 | +0.60 |
 
 **Kết luận:**
-> Variant tốt hơn hay kém hơn? Ở điểm nào?
-
-_________________
+> Variant 2 tốt hơn hẳn Baseline. Mặc dù Answer Relevance giảm nhẹ (0.01), nhưng độ đầy đủ (Completeness) tăng mạnh 0.6 điểm và Faithfulness cũng được cải thiện nhờ loại bỏ các chunk gây nhiễu. Điều này chứng minh Rerank là bước cực kỳ quan trọng khi muốn tăng số lượng context cung cấp cho model.
 
 ---
 
@@ -119,18 +114,16 @@ _________________
 
 | Thành viên | Phần đã làm | Sprint |
 |------------|-------------|--------|
-| ___ | ___________________ | ___ |
-| ___ | ___________________ | ___ |
-| ___ | ___________________ | ___ |
-| ___ | ___________________ | ___ |
+| Nguyễn Tuấn Hưng | Tech Lead, dựng khung pipeline RAG, quản lý repo. | 1, 2, 3, 4 |
+| Nguyễn Đăng Hải | Retrieval Owner, tối ưu Hybrid search và BM25. | 2, 3 |
+| Tạ Bảo Ngọc | Eval Owner, thiết lập bộ metrics và chạy scorecard. | 3, 4 |
+| Lê Minh Hoàng | Documentation Owner, viết architecture và tuning log. | 1, 2, 3, 4 |
 
 **Điều nhóm làm tốt:**
-
-_________________
+Nhóm phối hợp nhịp nhàng trong việc A/B testing, mỗi thay đổi (Variant) đều được ghi chép cẩn thận và đánh giá dựa trên số liệu cụ thể thay vì cảm tính. Việc sử dụng Rerank đã giải quyết hiệu quả vấn đề nhiễu thông tin mà nhóm gặp phải ở giai đoạn đầu.
 
 **Điều nhóm làm chưa tốt:**
-
-_________________
+Quá trình xử lý dữ liệu (Indexing) còn đơn giản, chưa xử lý được các trường hợp thông tin đặc biệt cho khách hàng VIP hay các bảng biểu phức tạp. Nhóm cũng chưa có thời gian thử nghiệm Query Transformation để xử lý các câu hỏi lắt léo về alias.
 
 ---
 
@@ -138,7 +131,8 @@ _________________
 
 > 1–2 cải tiến cụ thể với lý do có bằng chứng từ scorecard.
 
-_________________
+1. **Query Transformation:** Áp dụng Multi-query hoặc HyDE để giải quyết triệt để các câu hỏi sử dụng tên cũ/alias như q07, giúp tăng Context Recall mà không cần nạp quá nhiều chunk thô.
+2. **Dynamic Chunking:** Thử nghiệm chiến lược chunking linh hoạt hơn cho các tài liệu PDF chứa bảng biểu để tránh việc thông tin bị cắt đôi, giúp cải thiện điểm Completeness cho các câu hỏi tra cứu thông số kỹ thuật.
 
 ---
 
