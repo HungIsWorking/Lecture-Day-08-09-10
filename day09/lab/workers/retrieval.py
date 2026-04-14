@@ -16,7 +16,7 @@ Gọi độc lập để test:
 """
 
 import os
-import sys
+import re
 
 # ─────────────────────────────────────────────
 # Worker Contract (xem contracts/worker_contracts.yaml)
@@ -26,39 +26,24 @@ import sys
 
 WORKER_NAME = "retrieval_worker"
 DEFAULT_TOP_K = 3
+COLLECTION_NAME = "day09_docs"
+
+_EMBED_MODEL = None
 
 
 def _get_embedding_fn():
     """
-    Trả về embedding function.
-    TODO Sprint 1: Implement dùng OpenAI hoặc Sentence Transformers.
+    Trả về embedding function offline bằng SentenceTransformer.
     """
-    # Option A: Sentence Transformers (offline, không cần API key)
-    try:
-        from sentence_transformers import SentenceTransformer
-        model = SentenceTransformer("all-MiniLM-L6-v2")
-        def embed(text: str) -> list:
-            return model.encode([text])[0].tolist()
-        return embed
-    except ImportError:
-        pass
+    global _EMBED_MODEL
+    from sentence_transformers import SentenceTransformer
 
-    # Option B: OpenAI (cần API key)
-    try:
-        from openai import OpenAI
-        client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-        def embed(text: str) -> list:
-            resp = client.embeddings.create(input=text, model="text-embedding-3-small")
-            return resp.data[0].embedding
-        return embed
-    except ImportError:
-        pass
+    if _EMBED_MODEL is None:
+        _EMBED_MODEL = SentenceTransformer("all-MiniLM-L6-v2")
 
-    # Fallback: random embeddings cho test (KHÔNG dùng production)
-    import random
     def embed(text: str) -> list:
-        return [random.random() for _ in range(384)]
-    print("⚠️  WARNING: Using random embeddings (test only). Install sentence-transformers.")
+        return _EMBED_MODEL.encode([text])[0].tolist()
+
     return embed
 
 
@@ -68,36 +53,97 @@ def _get_collection():
     TODO Sprint 2: Đảm bảo collection đã được build từ Step 3 trong README.
     """
     import chromadb
-    client = chromadb.PersistentClient(path="./chroma_db")
+    chroma_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "chroma_db")
+    client = chromadb.PersistentClient(path=chroma_path)
     try:
-        collection = client.get_collection("day09_docs")
+        collection = client.get_collection(COLLECTION_NAME)
     except Exception:
-        # Auto-create nếu chưa có
+        # Auto-create nếu chưa có data để pipeline vẫn chạy được
         collection = client.get_or_create_collection(
-            "day09_docs",
+            COLLECTION_NAME,
             metadata={"hnsw:space": "cosine"}
         )
-        print(f"⚠️  Collection 'day09_docs' chưa có data. Chạy index script trong README trước.")
+        print(f"⚠️  Collection '{COLLECTION_NAME}' chưa có data. Chạy index script trong README trước.")
     return collection
+
+
+def _tokenize(text: str) -> set:
+    return {tok for tok in re.findall(r"\w+", text.lower(), flags=re.UNICODE) if len(tok) > 1}
+
+
+def _source_boost(query_text: str, source_name: str) -> float:
+    q = query_text.lower()
+    s = source_name.lower()
+
+    if any(kw in q for kw in ["hoàn tiền", "refund", "flash sale", "store credit", "license"]):
+        return 0.35 if "policy_refund_v4" in s else 0.0
+    if any(kw in q for kw in ["sla", "p1", "ticket", "escalation", "incident"]):
+        return 0.35 if "sla_p1_2026" in s else 0.0
+    if any(kw in q for kw in ["access", "cấp quyền", "level", "admin", "contractor"]):
+        return 0.35 if "access_control_sop" in s else 0.0
+    if any(kw in q for kw in ["remote", "probation", "nghỉ", "hr", "nhân viên"]):
+        return 0.35 if "hr_leave_policy" in s else 0.0
+    if any(kw in q for kw in ["mật khẩu", "vpn", "helpdesk", "đăng nhập", "faq"]):
+        return 0.35 if "it_helpdesk_faq" in s else 0.0
+    return 0.0
+
+
+def _lexical_fallback(query: str, top_k: int = DEFAULT_TOP_K) -> list:
+    """Fallback retrieval theo lexical overlap khi vector stack chưa sẵn sàng."""
+    docs_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "docs")
+    if not os.path.isdir(docs_dir):
+        return []
+
+    q_tokens = _tokenize(query)
+    if not q_tokens:
+        return []
+
+    scored = []
+    for fname in os.listdir(docs_dir):
+        fpath = os.path.join(docs_dir, fname)
+        if not os.path.isfile(fpath):
+            continue
+        try:
+            with open(fpath, encoding="utf-8") as f:
+                content = f.read().strip()
+        except Exception:
+            continue
+
+        doc_tokens = _tokenize(content)
+        if not doc_tokens:
+            continue
+
+        overlap = q_tokens.intersection(doc_tokens)
+        overlap_score = len(overlap) / max(1, len(q_tokens))
+        boosted_score = overlap_score + _source_boost(query, fname)
+        if boosted_score <= 0:
+            continue
+
+        snippet = content[:1200]
+        scored.append({
+            "text": snippet,
+            "source": fname,
+            "score": round(min(0.95, boosted_score), 4),
+            "metadata": {"retrieval": "lexical_fallback"},
+        })
+
+    scored.sort(key=lambda item: item["score"], reverse=True)
+    return scored[:top_k]
 
 
 def retrieve_dense(query: str, top_k: int = DEFAULT_TOP_K) -> list:
     """
     Dense retrieval: embed query → query ChromaDB → trả về top_k chunks.
 
-    TODO Sprint 2: Implement phần này.
-    - Dùng _get_embedding_fn() để embed query
-    - Query collection với n_results=top_k
-    - Format result thành list of dict
-
     Returns:
         list of {"text": str, "source": str, "score": float, "metadata": dict}
     """
-    # TODO: Implement dense retrieval
-    embed = _get_embedding_fn()
-    query_embedding = embed(query)
+    if not query.strip():
+        return []
 
     try:
+        embed = _get_embedding_fn()
+        query_embedding = embed(query)
         collection = _get_collection()
         results = collection.query(
             query_embeddings=[query_embedding],
@@ -105,24 +151,28 @@ def retrieve_dense(query: str, top_k: int = DEFAULT_TOP_K) -> list:
             include=["documents", "distances", "metadatas"]
         )
 
+        docs = (results.get("documents") or [[]])[0]
+        dists = (results.get("distances") or [[]])[0]
+        metas = (results.get("metadatas") or [[]])[0]
+
         chunks = []
-        for i, (doc, dist, meta) in enumerate(zip(
-            results["documents"][0],
-            results["distances"][0],
-            results["metadatas"][0]
-        )):
+        for doc, dist, meta in zip(docs, dists, metas):
+            score = max(0.0, min(1.0, 1 - float(dist)))
+            meta = meta or {}
             chunks.append({
                 "text": doc,
                 "source": meta.get("source", "unknown"),
-                "score": round(1 - dist, 4),  # cosine similarity
+                "score": round(score, 4),
                 "metadata": meta,
             })
-        return chunks
+        if chunks:
+            return chunks
+
+        return _lexical_fallback(query, top_k=top_k)
 
     except Exception as e:
-        print(f"⚠️  ChromaDB query failed: {e}")
-        # Fallback: return empty (abstain)
-        return []
+        print(f"⚠️  Dense retrieval unavailable ({e}). Falling back to lexical retrieval.")
+        return _lexical_fallback(query, top_k=top_k)
 
 
 def run(state: dict) -> dict:
@@ -136,7 +186,7 @@ def run(state: dict) -> dict:
         Updated AgentState với retrieved_chunks và retrieved_sources
     """
     task = state.get("task", "")
-    top_k = state.get("retrieval_top_k", DEFAULT_TOP_K)
+    top_k = state.get("top_k", state.get("retrieval_top_k", DEFAULT_TOP_K))
 
     state.setdefault("workers_called", [])
     state.setdefault("history", [])

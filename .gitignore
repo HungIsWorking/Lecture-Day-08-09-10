@@ -1,8 +1,20 @@
 .DS_Store
 *.swp
 *~
+*.pyc
+__pycache__/
+.venv/
 
 day08/lab/.env
 day08/lab/.venv
 # Grading questions — không public trước 17:00
 day08/lab/data/grading_questions.json
+
+day09/lab/.env
+day09/lab/.venv
+day09/lab/__pycache__/
+day09/lab/workers/__pycache__/
+day09/lab/artifacts/
+day09/lab/chroma_db/
+# Grading questions — không public trước 17:00
+day09/lab/data/grading_questions.json

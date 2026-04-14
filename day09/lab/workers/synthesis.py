@@ -17,6 +17,7 @@ Gọi độc lập để test:
 """
 
 import os
+from typing import Optional
 
 WORKER_NAME = "synthesis_worker"
 
@@ -31,38 +32,74 @@ Quy tắc nghiêm ngặt:
 """
 
 
-def _call_llm(messages: list) -> str:
+def _call_llm(messages: list) -> Optional[str]:
     """
-    Gọi LLM để tổng hợp câu trả lời.
-    TODO Sprint 2: Implement với OpenAI hoặc Gemini.
+    Gọi Gemini để tổng hợp câu trả lời.
     """
-    # Option A: OpenAI
     try:
-        from openai import OpenAI
-        client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=messages,
-            temperature=0.1,  # Low temperature để grounded
-            max_tokens=500,
-        )
-        return response.choices[0].message.content
-    except Exception:
-        pass
+        import google.generativeai as genai  # type: ignore[import-not-found]
 
-    # Option B: Gemini
-    try:
-        import google.generativeai as genai
-        genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
+        api_key = os.getenv("GOOGLE_API_KEY")
+        if not api_key:
+            return None
+
+        genai.configure(api_key=api_key)
         model = genai.GenerativeModel("gemini-1.5-flash")
-        combined = "\n".join([m["content"] for m in messages])
+        combined = "\n\n".join([f"{m['role'].upper()}:\n{m['content']}" for m in messages])
         response = model.generate_content(combined)
-        return response.text
+        text = (response.text or "").strip()
+        return text or None
     except Exception:
-        pass
+        return None
 
-    # Fallback: trả về message báo lỗi (không hallucinate)
-    return "[SYNTHESIS ERROR] Không thể gọi LLM. Kiểm tra API key trong .env."
+
+def _extract_all_sources(chunks: list, policy_result: dict) -> list:
+    chunk_sources = [c.get("source", "unknown") for c in chunks if c.get("source")]
+    policy_sources = policy_result.get("source", []) if isinstance(policy_result, dict) else []
+    merged = []
+    for src in chunk_sources + policy_sources:
+        if src and src not in merged:
+            merged.append(src)
+    return merged
+
+
+def _fallback_answer(task: str, chunks: list, policy_result: dict) -> str:
+    """Fallback deterministic để pipeline vẫn chạy khi thiếu API key Gemini."""
+    all_sources = _extract_all_sources(chunks, policy_result)
+    if not chunks:
+        return "Không đủ thông tin trong tài liệu nội bộ để trả lời chắc chắn câu hỏi này."
+
+    best_chunk = max(chunks, key=lambda c: c.get("score", 0))
+    snippet = best_chunk.get("text", "").strip()
+    snippet = snippet[:450] + ("..." if len(snippet) > 450 else "")
+
+    exception_lines = []
+    for ex in policy_result.get("exceptions_found", []):
+        exception_lines.append(f"- Ngoại lệ: {ex.get('rule', '')}")
+
+    lines = [
+        f"Trả lời dựa trên evidence gần nhất cho câu hỏi: {task}",
+        snippet,
+    ]
+    if exception_lines:
+        lines.append("Các ngoại lệ liên quan:")
+        lines.extend(exception_lines)
+
+    if all_sources:
+        lines.append("Nguồn: " + ", ".join(f"[{s}]" for s in all_sources))
+    return "\n".join(lines)
+
+
+def _ensure_citations(answer: str, sources: list) -> str:
+    if not sources:
+        return answer
+
+    has_any_citation = any(f"[{src}]" in answer for src in sources)
+    if has_any_citation:
+        return answer
+
+    cite_suffix = "\nNguồn tham khảo: " + ", ".join(f"[{src}]" for src in sources)
+    return answer.rstrip() + cite_suffix
 
 
 def _build_context(chunks: list, policy_result: dict) -> str:
@@ -95,7 +132,7 @@ def _estimate_confidence(chunks: list, answer: str, policy_result: dict) -> floa
     - Có exceptions không
     - Answer có abstain không
 
-    TODO Sprint 2: Có thể dùng LLM-as-Judge để tính confidence chính xác hơn.
+    Heuristic nhẹ, ổn định cho lab.
     """
     if not chunks:
         return 0.1  # Không có evidence → low confidence
@@ -139,7 +176,11 @@ Hãy trả lời câu hỏi dựa vào tài liệu trên."""
     ]
 
     answer = _call_llm(messages)
-    sources = list({c.get("source", "unknown") for c in chunks})
+    if not answer:
+        answer = _fallback_answer(task, chunks, policy_result)
+
+    sources = _extract_all_sources(chunks, policy_result)
+    answer = _ensure_citations(answer, sources)
     confidence = _estimate_confidence(chunks, answer, policy_result)
 
     return {
@@ -177,6 +218,12 @@ def run(state: dict) -> dict:
         state["final_answer"] = result["answer"]
         state["sources"] = result["sources"]
         state["confidence"] = result["confidence"]
+
+        if state["confidence"] < 0.4:
+            state["hitl_triggered"] = True
+            state["history"].append(
+                f"[{WORKER_NAME}] low confidence detected ({state['confidence']}) -> hitl_triggered=True"
+            )
 
         worker_io["output"] = {
             "answer_length": len(result["answer"]),

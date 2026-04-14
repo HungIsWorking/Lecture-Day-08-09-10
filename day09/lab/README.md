@@ -91,7 +91,7 @@ pip install -r requirements.txt
 ### 2. Tạo file .env
 ```bash
 cp .env.example .env
-# Điền OPENAI_API_KEY hoặc GOOGLE_API_KEY
+# Điền GOOGLE_API_KEY
 ```
 
 ### 3. Build index từ Day 08 (nếu chưa có)
@@ -330,4 +330,4 @@ Nếu pipeline trả lời sai, kiểm tra lần lượt:
 - LangGraph docs: https://langchain-ai.github.io/langgraph/
 - MCP spec: https://modelcontextprotocol.io/docs
 - ChromaDB: https://docs.trychroma.com
-- OpenAI Function Calling: https://platform.openai.com/docs/guides/function-calling
+- Gemini API docs: https://ai.google.dev/gemini-api/docs
