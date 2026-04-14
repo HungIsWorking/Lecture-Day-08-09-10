@@ -71,6 +71,14 @@ def _contains_any(text: str, keywords: List[str]) -> bool:
     return any(keyword in text for keyword in keywords)
 
 
+def _has_negated_phrase(text: str, phrase: str) -> bool:
+    neg_markers = ["không", "ko", "not"]
+    for marker in neg_markers:
+        if f"{marker} {phrase}" in text or f"{marker} phải {phrase}" in text:
+            return True
+    return False
+
+
 def _extract_access_level(task_text: str) -> int:
     """Rút access level từ task. Mặc định level 2 nếu không rõ."""
     match = re.search(r"level\s*([1-4])", task_text)
@@ -93,11 +101,20 @@ def analyze_policy(task: str, chunks: list) -> dict:
     context_text = " ".join([c.get("text", "") for c in chunks]).lower()
     merged_text = f"{task_lower} {context_text}"
 
+    is_refund_context = _contains_any(
+        task_lower,
+        ["hoàn tiền", "refund", "store credit", "flash sale", "kỹ thuật số", "license", "subscription"],
+    )
+    is_access_context = _contains_any(
+        task_lower,
+        ["access", "cấp quyền", "level", "admin", "phê duyệt", "contractor"],
+    )
+
     # --- Rule-based exception detection ---
     exceptions_found = []
 
     # Exception 1: Flash Sale
-    if "flash sale" in merged_text:
+    if is_refund_context and "flash sale" in merged_text and not _has_negated_phrase(task_lower, "flash sale"):
         exceptions_found.append({
             "type": "flash_sale_exception",
             "rule": "Đơn hàng Flash Sale không được hoàn tiền (Điều 3, chính sách v4).",
@@ -105,7 +122,7 @@ def analyze_policy(task: str, chunks: list) -> dict:
         })
 
     # Exception 2: Digital product
-    if _contains_any(merged_text, ["license key", "license", "subscription", "kỹ thuật số", "digital"]):
+    if is_refund_context and _contains_any(merged_text, ["license key", "license", "subscription", "kỹ thuật số", "digital"]):
         exceptions_found.append({
             "type": "digital_product_exception",
             "rule": "Sản phẩm kỹ thuật số (license key, subscription) không được hoàn tiền (Điều 3).",
@@ -113,7 +130,7 @@ def analyze_policy(task: str, chunks: list) -> dict:
         })
 
     # Exception 3: Activated product
-    if _contains_any(merged_text, ["đã kích hoạt", "đã đăng ký", "đã sử dụng", "activated"]):
+    if is_refund_context and _contains_any(merged_text, ["đã kích hoạt", "đã đăng ký", "đã sử dụng", "activated"]):
         exceptions_found.append({
             "type": "activated_exception",
             "rule": "Sản phẩm đã kích hoạt hoặc đăng ký tài khoản không được hoàn tiền (Điều 3).",
@@ -126,11 +143,18 @@ def analyze_policy(task: str, chunks: list) -> dict:
     # Determine which policy version applies (temporal scoping)
     policy_name = "refund_policy_v4"
     policy_version_note = ""
+    requires_abstain = False
+    abstain_reason = ""
     if _contains_any(
-        merged_text,
+        task_lower,
         ["31/01", "30/01", "trước 01/02", "before 01/02", "trước ngày 01/02/2026", "01/02/2026"]
     ):
         policy_version_note = "Đơn hàng đặt trước 01/02/2026 áp dụng chính sách v3 (không có trong tài liệu hiện tại)."
+        requires_abstain = True
+        abstain_reason = "Không đủ dữ liệu về policy v3 trong bộ tài liệu hiện tại để kết luận chắc chắn."
+
+    if is_access_context:
+        policy_name = "access_control_sop"
 
     sources = list({c.get("source", "unknown") for c in chunks if c})
     if exceptions_found and "policy_refund_v4.txt" not in sources:
@@ -146,6 +170,8 @@ def analyze_policy(task: str, chunks: list) -> dict:
         "exceptions_found": exceptions_found,
         "source": sources,
         "policy_version_note": policy_version_note,
+        "requires_abstain": requires_abstain,
+        "abstain_reason": abstain_reason,
         "explanation": explanation,
     }
 
