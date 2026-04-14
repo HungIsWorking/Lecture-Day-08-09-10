@@ -1,126 +1,115 @@
 # System Architecture — Lab Day 09
 
-**Nhóm:** ___________  
-**Ngày:** ___________  
-**Version:** 1.0
+**Nhóm:** Nhóm 103  
+**Ngày:** 2026-04-14  
+**Version:** 1.1
 
 ---
 
 ## 1. Tổng quan kiến trúc
 
-> Mô tả ngắn hệ thống của nhóm: chọn pattern gì, gồm những thành phần nào.
-
 **Pattern đã chọn:** Supervisor-Worker  
 **Lý do chọn pattern này (thay vì single agent):**
 
-_________________
+- Tách trách nhiệm rõ: supervisor chỉ route, worker xử lý nghiệp vụ.
+- Dễ debug bằng trace theo từng bước: route_reason, workers_called, mcp_tools_used.
+- Dễ mở rộng: thêm tool MCP hoặc worker mới mà không phải sửa toàn pipeline.
 
 ---
 
 ## 2. Sơ đồ Pipeline
 
-> Vẽ sơ đồ pipeline dưới dạng text, Mermaid diagram, hoặc ASCII art.
-> Yêu cầu tối thiểu: thể hiện rõ luồng từ input → supervisor → workers → output.
-
-**Ví dụ (ASCII art):**
 ```
-User Request
-     │
-     ▼
-┌──────────────┐
-│  Supervisor  │  ← route_reason, risk_high, needs_tool
-└──────┬───────┘
-       │
-   [route_decision]
-       │
-  ┌────┴────────────────────┐
-  │                         │
-  ▼                         ▼
-Retrieval Worker     Policy Tool Worker
-  (evidence)           (policy check + MCP)
-  │                         │
-  └─────────┬───────────────┘
-            │
-            ▼
-      Synthesis Worker
-        (answer + cite)
-            │
-            ▼
-         Output
-```
-
-**Sơ đồ thực tế của nhóm:**
-
-```
-[NHÓM ĐIỀN VÀO ĐÂY]
+User Query
+  |
+  v
+Supervisor (graph.py)
+  |- set supervisor_route, route_reason, risk_high, needs_tool
+  |
+  +--> retrieval_worker --------------------+
+  |                                         |
+  +--> policy_tool_worker (MCP) --------+   |
+  |                                     |   |
+  +--> human_review (HITL placeholder) -+   |
+                              |
+                              v
+                       synthesis_worker
+                              |
+                              v
+                      final_answer + sources + confidence
 ```
 
 ---
 
 ## 3. Vai trò từng thành phần
 
-### Supervisor (`graph.py`)
+### Supervisor (graph.py)
 
 | Thuộc tính | Mô tả |
 |-----------|-------|
-| **Nhiệm vụ** | ___________________ |
-| **Input** | ___________________ |
+| **Nhiệm vụ** | Phân tích task, quyết định worker route, gắn route_reason |
+| **Input** | task từ user |
 | **Output** | supervisor_route, route_reason, risk_high, needs_tool |
-| **Routing logic** | ___________________ |
-| **HITL condition** | ___________________ |
+| **Routing logic** | policy/access -> policy_tool_worker; SLA/ticket/escalation -> retrieval_worker; unknown error -> human_review |
+| **HITL condition** | Unknown error code hoặc low confidence được trigger ở synthesis |
 
-### Retrieval Worker (`workers/retrieval.py`)
-
-| Thuộc tính | Mô tả |
-|-----------|-------|
-| **Nhiệm vụ** | ___________________ |
-| **Embedding model** | ___________________ |
-| **Top-k** | ___________________ |
-| **Stateless?** | Yes / No |
-
-### Policy Tool Worker (`workers/policy_tool.py`)
+### Retrieval Worker (workers/retrieval.py)
 
 | Thuộc tính | Mô tả |
 |-----------|-------|
-| **Nhiệm vụ** | ___________________ |
-| **MCP tools gọi** | ___________________ |
-| **Exception cases xử lý** | ___________________ |
+| **Nhiệm vụ** | Retrieve evidence từ ChromaDB, fallback lexical khi cần |
+| **Embedding model** | sentence-transformers/all-MiniLM-L6-v2 |
+| **Top-k** | Mặc định 3 |
+| **Stateless?** | Yes |
 
-### Synthesis Worker (`workers/synthesis.py`)
+### Policy Tool Worker (workers/policy_tool.py)
 
 | Thuộc tính | Mô tả |
 |-----------|-------|
-| **LLM model** | ___________________ |
-| **Temperature** | ___________________ |
-| **Grounding strategy** | ___________________ |
-| **Abstain condition** | ___________________ |
+| **Nhiệm vụ** | Kiểm tra policy, exception, temporal scope; gọi MCP tools |
+| **MCP tools gọi** | search_kb, get_ticket_info, check_access_permission |
+| **Exception cases xử lý** | flash_sale, digital_product, activated_product, temporal v3/v4 |
 
-### MCP Server (`mcp_server.py`)
+### Synthesis Worker (workers/synthesis.py)
+
+| Thuộc tính | Mô tả |
+|-----------|-------|
+| **LLM model** | gemini-1.5-flash (khi có API key) |
+| **Temperature** | 0 (qua generation config mặc định judge/fact-first flow) |
+| **Grounding strategy** | Fact-first rule-based cho câu trọng điểm, fallback LLM, cuối cùng fallback deterministic |
+| **Abstain condition** | Thiếu dữ liệu (policy v3, financial penalty absent) hoặc không có evidence |
+
+### MCP Server (mcp_server.py)
 
 | Tool | Input | Output |
 |------|-------|--------|
 | search_kb | query, top_k | chunks, sources |
 | get_ticket_info | ticket_id | ticket details |
-| check_access_permission | access_level, requester_role | can_grant, approvers |
-| ___________________ | ___________________ | ___________________ |
+| check_access_permission | access_level, requester_role, is_emergency | can_grant, required_approvers, emergency_override |
+| create_ticket | priority, title, description | mock ticket_id, created_at, url |
 
 ---
 
 ## 4. Shared State Schema
-
-> Liệt kê các fields trong AgentState và ý nghĩa của từng field.
 
 | Field | Type | Mô tả | Ai đọc/ghi |
 |-------|------|-------|-----------|
 | task | str | Câu hỏi đầu vào | supervisor đọc |
 | supervisor_route | str | Worker được chọn | supervisor ghi |
 | route_reason | str | Lý do route | supervisor ghi |
-| retrieved_chunks | list | Evidence từ retrieval | retrieval ghi, synthesis đọc |
-| policy_result | dict | Kết quả kiểm tra policy | policy_tool ghi, synthesis đọc |
-| mcp_tools_used | list | Tool calls đã thực hiện | policy_tool ghi |
+| risk_high | bool | Cờ rủi ro cao | supervisor ghi, synthesis đọc |
+| needs_tool | bool | Có cần MCP tool | supervisor ghi, policy_tool đọc |
+| retrieved_chunks | list | Evidence retrieval | retrieval/policy_tool ghi, synthesis đọc |
+| retrieved_sources | list | Nguồn evidence | retrieval/policy_tool ghi, synthesis đọc |
+| policy_result | dict | Kết quả policy/tool | policy_tool ghi, synthesis đọc |
+| mcp_tools_used | list | Tool calls thực tế | policy_tool ghi |
+| workers_called | list | Chuỗi worker đã đi qua | mỗi worker append |
+| worker_io_logs | list | Log I/O từng worker | mỗi worker append |
 | final_answer | str | Câu trả lời cuối | synthesis ghi |
+| sources | list | Source citation | synthesis ghi |
 | confidence | float | Mức tin cậy | synthesis ghi |
-| ___________________ | ___________________ | ___________________ | ___________________ |
+| hitl_triggered | bool | Có trigger HITL | human_review/synthesis ghi |
+| latency_ms | int | Thời gian run | graph ghi |
 
 ---
 
@@ -128,21 +117,20 @@ Retrieval Worker     Policy Tool Worker
 
 | Tiêu chí | Single Agent (Day 08) | Supervisor-Worker (Day 09) |
 |----------|----------------------|--------------------------|
-| Debug khi sai | Khó — không rõ lỗi ở đâu | Dễ hơn — test từng worker độc lập |
-| Thêm capability mới | Phải sửa toàn prompt | Thêm worker/MCP tool riêng |
-| Routing visibility | Không có | Có route_reason trong trace |
-| ___________________ | ___________________ | ___________________ |
+| Debug khi sai | Khó tách lỗi retrieval/policy/generation | Đọc trace là biết lỗi nằm ở route hay worker |
+| Thêm capability mới | Sửa prompt/hàm lớn | Thêm MCP tool hoặc worker độc lập |
+| Routing visibility | Không có route_reason | Có route_reason rõ cho từng run |
+| Test độc lập | Khó test từng bước | Mỗi worker test độc lập được |
 
-**Nhóm điền thêm quan sát từ thực tế lab:**
+**Quan sát thực tế từ lab:**
 
-_________________
+- Sau khi thêm fact-first synthesis và temporal-abstain rule, bộ grading cải thiện rõ.
+- Route distribution cân bằng hơn cho domain policy và SLA.
 
 ---
 
 ## 6. Giới hạn và điểm cần cải tiến
 
-> Nhóm mô tả những điểm hạn chế của kiến trúc hiện tại.
-
-1. ___________________
-2. ___________________
-3. ___________________
+1. Cold start của retrieval model còn cao (first query > 10s).
+2. Citation hiện vẫn có nguồn nhiễu ở một số câu (nên lọc source theo domain chặt hơn).
+3. HITL mới là placeholder auto-approve, chưa có cơ chế dừng/chờ người thật.
