@@ -330,3 +330,5 @@ if __name__ == "__main__":
         print(f"  Trace saved → {trace_file}")
 
     print("\n✅ graph.py test complete. Supervisor + workers are wired end-to-end.")
+
+    
