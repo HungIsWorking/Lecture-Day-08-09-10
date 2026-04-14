@@ -2,12 +2,12 @@
 
 **Tên nhóm:** Nhóm 103  
 **Thành viên:**
-| Tên | Vai trò | Email |
-|-----|---------|-------|
-|  | Supervisor Owner |  |
-|  | Worker Owner |  |
-|  | MCP Owner |  |
-|  | Trace & Docs Owner |  |
+| Tên | Vai trò |
+|-----|---------|
+| Nguyễn Đăng Hải | Supervisor Owner |
+| Nguyễn Tuấn Hưng | Worker Owner |
+| Trần Trung Hậu | MCP Owner |
+| Trần Trung Hậu | Trace & Docs Owner |
 
 **Ngày nộp:** 2026-04-14  
 **Repo:** day09/lab
@@ -88,10 +88,10 @@ Về hiệu năng, Day 09 sau warm-up có độ trễ thấp ở phần lớn qu
 
 | Thành viên | Phần đã làm | Sprint |
 |------------|-------------|--------|
-| Thành viên 1 | graph.py, routing logic | Sprint 1 |
-| Thành viên 2 | retrieval worker + tuning retrieval | Sprint 2 |
-| Thành viên 3 | policy_tool + MCP integration | Sprint 2-3 |
-| Thành viên 4 | eval_trace, trace analysis, docs/report | Sprint 4 |
+| Nguyễn Đăng Hải | graph.py, routing logic | Sprint 1 |
+| Nguyễn Tuấn Hưng | retrieval worker + tuning retrieval | Sprint 2 |
+| Trần Trung Hậu | policy_tool + MCP integration | Sprint 2-3 |
+| Trần Trung Hậu | eval_trace, trace analysis, docs/report | Sprint 4 |
 
 **Điều nhóm làm tốt:**
 
