@@ -8,10 +8,11 @@
 
 | Tên | Vai trò Day 10 | Ghi chú bằng chứng |
 |-----|-----------------|---------------------|
+| Nguyễn Đăng Hải | Ingestion & Embed Owner | Triển khai load_raw_csv, cmd_run/cmd_embed_internal (etl_pipeline.py), eval_retrieval.py, grading_run.py, pruning stale vector (được đề xuất từ Cleaning Owner) |
 | Tran Trung Hau | Cleaning & Quality Owner | Triển khai Rule 7-11 (transform/cleaning_rules.py), E7-E8 (quality/expectations.py), phát hiện & fix anomaly prune stale vector |
 | Nguyễn Tuấn Hưng | Monitoring / Docs Owner | Chạy thực nghiệm before/after, tổng hợp số liệu, hoàn thiện group report và kiểm tra grading/manifest |
 
-Ghi chú trung thực: 2 thành viên trên đều có báo cáo cá nhân và bằng chứng trong repo. Còn 2 vai trò (Ingestion Owner, Embed Owner) chưa có thành viên đăng ký.
+Ghi chú trung thực: 3 thành viên trên đều có báo cáo cá nhân và bằng chứng trong repo. Mỗi vai trò đã tách bạch rõ: Ingestion & Embed Owner (Hải), Cleaning & Quality Owner (Hau), Monitoring / Docs Owner (Hưng).
 
 ---
 
