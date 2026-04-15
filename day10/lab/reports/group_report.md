@@ -8,9 +8,10 @@
 
 | Tên | Vai trò Day 10 | Ghi chú bằng chứng |
 |-----|-----------------|---------------------|
-| Nguyễn Tuấn Hưng | Monitoring / Docs Owner | Có chạy thực nghiệm before/after, tổng hợp số liệu, hoàn thiện báo cáo và kiểm tra grading/manifest |
+| Tran Trung Hau | Cleaning & Quality Owner | Triển khai Rule 7-11 (transform/cleaning_rules.py), E7-E8 (quality/expectations.py), phát hiện & fix anomaly prune stale vector |
+| Nguyễn Tuấn Hưng | Monitoring / Docs Owner | Chạy thực nghiệm before/after, tổng hợp số liệu, hoàn thiện group report và kiểm tra grading/manifest |
 
-Ghi chú trung thực: tại thời điểm cập nhật, repo chỉ có bằng chứng chắc chắn cho 1 thành viên nêu trên. Không tự điền thêm thành viên/role khi chưa có dữ liệu kiểm chứng.
+Ghi chú trung thực: 2 thành viên trên đều có báo cáo cá nhân và bằng chứng trong repo. Còn 2 vai trò (Ingestion Owner, Embed Owner) chưa có thành viên đăng ký.
 
 ---
 
