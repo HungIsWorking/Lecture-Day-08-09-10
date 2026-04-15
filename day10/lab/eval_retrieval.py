@@ -25,6 +25,11 @@ ROOT = Path(__file__).resolve().parent
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument(
+        "--scenario",
+        default="baseline",
+        help="Tên kịch bản A/B testing",
+    )
+    parser.add_argument(
         "--questions",
         default=str(ROOT / "data" / "test_questions.json"),
         help="JSON danh sách câu hỏi golden (retrieval)",
@@ -66,6 +71,7 @@ def main() -> int:
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
     fieldnames = [
+        "scenario",
         "question_id",
         "question",
         "top1_doc_id",
@@ -75,9 +81,11 @@ def main() -> int:
         "top1_doc_expected",
         "top_k_used",
     ]
-    with out_path.open("w", encoding="utf-8", newline="") as fcsv:
+    write_header = not out_path.exists() or out_path.stat().st_size == 0
+    with out_path.open("a", encoding="utf-8", newline="") as fcsv:
         w = csv.DictWriter(fcsv, fieldnames=fieldnames)
-        w.writeheader()
+        if write_header:
+            w.writeheader()
         for q in questions:
             text = q["question"]
             res = col.query(query_texts=[text], n_results=args.top_k)
@@ -96,6 +104,7 @@ def main() -> int:
                 top1_expected = "yes" if top_doc == want_top1 else "no"
             w.writerow(
                 {
+                    "scenario": args.scenario,
                     "question_id": q.get("id", ""),
                     "question": text,
                     "top1_doc_id": top_doc,
