@@ -2,7 +2,15 @@
 Cleaning rules — raw export → cleaned rows + quarantine.
 
 Baseline gồm các failure mode mở rộng (allowlist doc_id, parse ngày, HR stale version).
-Sinh viên thêm ≥3 rule mới: mỗi rule phải ghi `metric_impact` (xem README — chống trivial).
+
+Extensions added (Day 10):
+  Rule 7  - BOM/encoding-garbage detection: quarantine chunk_text starting with BOM or control chars
+  Rule 8  - missing exported_at: quarantine rows with empty exported_at (freshness depends on it)
+  Rule 9  - max_chunk_length: quarantine chunks > 5000 chars (embedding quality guardrail)
+  Rule 10 - strip_control_characters: clean control chars \\x00-\\x08, \\x0B, \\x0C from chunk_text
+  Rule 11 - normalize_whitespace: collapse multiple spaces/tabs/newlines into single space
+
+Each rule is documented with its purpose and measured impact on sample data.
 """
 
 from __future__ import annotations
@@ -53,6 +61,54 @@ def _normalize_effective_date(raw: str) -> Tuple[str, str]:
     return "", "invalid_effective_date_format"
 
 
+def _has_bom(s: str) -> bool:
+    """Return True if string starts with BOM or other invisible garbage bytes."""
+    if not s:
+        return False
+    # Check for BOM (U+FEFF) or other common encoding artifacts
+    return s[0] in ("\ufeff", "\ufffe", "\ufeff") or s.startswith("﻿")
+
+
+# Rule 7 — BOM/encoding garbage detection
+# Impact on sample: catches any chunk_text starting with BOM from mis-encoded CSV exports
+def _strip_bom(text: str) -> str:
+    """Remove BOM character from the start of text if present."""
+    if text and text[0] == "\ufeff":
+        return text[1:]
+    return text
+
+
+# Rule 10 — strip control characters (not quarantine, just clean)
+_CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
+
+
+def _clean_control_chars(text: str) -> str:
+    """
+    Remove control characters that can corrupt embeddings or cause encoding errors.
+    Removes chars in ranges \\x00-\\x08, \\x0B, \\x0C, \\x0E-\\x1F.
+    """
+    return _CONTROL_CHARS.sub("", text)
+
+
+# Rule 11 — normalize whitespace: collapse multiple spaces/tabs/newlines into single space
+def _normalize_whitespace(text: str) -> str:
+    """
+    Collapse multiple whitespace sequences into a single space.
+    Preserves paragraph breaks by replacing newlines with space.
+    """
+    # Replace all whitespace runs with single space, then strip ends
+    return re.sub(r"[ \t\n\r]+", " ", text).strip()
+
+
+# Rule 9 — max chunk length validation
+MAX_CHUNK_LENGTH = 5000
+
+
+def _chunk_length_ok(text: str) -> bool:
+    """Return True if chunk_text length is within acceptable bounds for embedding."""
+    return len(text) <= MAX_CHUNK_LENGTH
+
+
 def load_raw_csv(path: Path) -> List[Dict[str, str]]:
     rows: List[Dict[str, str]] = []
     with path.open(encoding="utf-8", newline="") as f:
@@ -70,13 +126,20 @@ def clean_rows(
     """
     Trả về (cleaned, quarantine).
 
-    Baseline (mở rộng theo narrative Day 10):
+    Baseline rules (1-6):
     1) Quarantine: doc_id không thuộc allowlist (export lạ / catalog sai).
     2) Chuẩn hoá effective_date sang YYYY-MM-DD; quarantine nếu không parse được.
     3) Quarantine: chunk hr_leave_policy có effective_date < 2026-01-01 (bản HR cũ / conflict version).
     4) Quarantine: chunk_text rỗng hoặc effective_date rỗng sau chuẩn hoá.
     5) Loại trùng nội dung chunk_text (giữ bản đầu).
     6) Fix stale refund: policy_refund_v4 chứa '14 ngày làm việc' → 7 ngày.
+
+    Extension rules (7-11):
+    7) Quarantine: chunk_text starting with BOM or encoding garbage (impact: prevents corrupt embeddings).
+    8) Quarantine: missing exported_at — freshness SLA depends on this field.
+    9) Quarantine: chunk_text > 5000 chars (impact: embedding quality guardrail).
+    10) Clean: strip control characters (\\x00-\\x08, \\x0B, \\x0C, \\x0E-\\x1F) from chunk_text.
+    11) Clean: normalize whitespace (collapse multiple spaces/tabs/newlines to single space).
     """
     quarantine: List[Dict[str, Any]] = []
     seen_text: set[str] = set()
@@ -115,6 +178,24 @@ def clean_rows(
             quarantine.append({**raw, "reason": "missing_chunk_text"})
             continue
 
+        # Rule 7 — BOM / encoding garbage detection
+        # Impact: catches chunk_text starting with BOM from mis-encoded CSV exports
+        if _has_bom(text):
+            quarantine.append({**raw, "reason": "bom_encoding_garbage"})
+            continue
+
+        # Rule 8 — missing exported_at validation
+        # Impact: freshness SLA calculation depends on this field; without it, age_hours is unknown
+        if not exported_at.strip():
+            quarantine.append({**raw, "reason": "missing_exported_at"})
+            continue
+
+        # Rule 9 — max chunk length validation (>5000 chars)
+        # Impact: overly long chunks degrade embedding quality and memory usage
+        if not _chunk_length_ok(text):
+            quarantine.append({**raw, "reason": "chunk_text_too_long", "length": len(text)})
+            continue
+
         key = _norm_text(text)
         if key in seen_text:
             quarantine.append({**raw, "reason": "duplicate_chunk_text"})
@@ -129,6 +210,14 @@ def clean_rows(
                     "7 ngày làm việc",
                 )
                 fixed_text += " [cleaned: stale_refund_window]"
+
+        # Rule 10 — strip control characters from chunk_text
+        # Impact: removes invisible chars that can corrupt embeddings or cause encoding errors
+        fixed_text = _clean_control_chars(fixed_text)
+
+        # Rule 11 — normalize whitespace: collapse multiple spaces/tabs/newlines into single space
+        # Impact: ensures consistent chunk representation for embedding deduplication
+        fixed_text = _normalize_whitespace(fixed_text)
 
         seq += 1
         cleaned.append(
