@@ -1,60 +1,14 @@
-# Báo Cáo Cá Nhân — Lab Day 10: Data Pipeline & Observability
+# Huong dan bao cao ca nhan — Lab Day 10
 
-**Họ và tên:** ___________  
-**Vai trò:** Ingestion / Cleaning / Embed / Monitoring — ___________  
-**Ngày nộp:** ___________  
-**Độ dài yêu cầu:** **400–650 từ** (ngắn hơn Day 09 vì rubric slide cá nhân ~10% — vẫn phải đủ bằng chứng)
+File nay giu vai tro checklist de tung thanh vien tao file rieng trong thu muc `reports/individual/`.
 
----
+Checklist toi thieu cho moi bao cao:
 
-> Viết **"tôi"**, đính kèm **run_id**, **tên file**, **đoạn log** hoặc **dòng CSV** thật.  
-> Nếu làm phần clean/expectation: nêu **một số liệu thay đổi** (vd `quarantine_records`, `hits_forbidden`, `top1_doc_expected`) khớp bảng `metric_impact` của nhóm.  
-> Lưu: `reports/individual/[ten_ban].md`
+1. Co thong tin nguoi viet (ho ten, vai tro, ngay nop).
+2. Co mo ta pham vi cong viec voi ten file/command da thuc hien.
+3. Co toi thieu 1 quyet dinh ky thuat va ly do lua chon.
+4. Co 1 su co da gap + cach phat hien + cach xu ly.
+5. Co bang chung before/after tu artifact that (`manifest`, `log`, `eval`, `grading`).
+6. Co de xuat 1 cai tien cu the neu co them thoi gian.
 
----
-
-## 1. Tôi phụ trách phần nào? (80–120 từ)
-
-**File / module:**
-
-- …
-
-**Kết nối với thành viên khác:**
-
-_________________
-
-**Bằng chứng (commit / comment trong code):**
-
-_________________
-
----
-
-## 2. Một quyết định kỹ thuật (100–150 từ)
-
-> VD: chọn halt vs warn, chiến lược idempotency, cách đo freshness, format quarantine.
-
-_________________
-
----
-
-## 3. Một lỗi hoặc anomaly đã xử lý (100–150 từ)
-
-> Mô tả triệu chứng → metric/check nào phát hiện → fix.
-
-_________________
-
----
-
-## 4. Bằng chứng trước / sau (80–120 từ)
-
-> Dán ngắn 2 dòng từ `before_after_eval.csv` hoặc tương đương; ghi rõ `run_id`.
-
-_________________
-
----
-
-## 5. Cải tiến tiếp theo (40–80 từ)
-
-> Nếu có thêm 2 giờ — một việc cụ thể (không chung chung).
-
-_________________
+Luu y: khong dien thong tin khong kiem chung duoc trong repo.

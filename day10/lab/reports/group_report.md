@@ -1,90 +1,101 @@
 # Báo Cáo Nhóm — Lab Day 10: Data Pipeline & Data Observability
 
-**Tên nhóm:** ___________  
-**Thành viên:**
-| Tên | Vai trò (Day 10) | Email |
-|-----|------------------|-------|
-| ___ | Ingestion / Raw Owner | ___ |
-| ___ | Cleaning & Quality Owner | ___ |
-| ___ | Embed & Idempotency Owner | ___ |
-| ___ | Monitoring / Docs Owner | ___ |
+**Tên nhóm:** Nhóm 130  
+**Ngày nộp:** 2026-04-15  
+**Repo:** day10/lab
 
-**Ngày nộp:** ___________  
-**Repo:** ___________  
-**Độ dài khuyến nghị:** 600–1000 từ
+## Vai trò theo rubric (4 vai trò chuẩn)
 
----
+| Tên | Vai trò Day 10 | Ghi chú bằng chứng |
+|-----|-----------------|---------------------|
+| Nguyễn Tuấn Hùng | Monitoring / Docs Owner | Có chạy thực nghiệm before/after, tổng hợp số liệu, hoàn thiện báo cáo và kiểm tra grading/manifest |
 
-> **Nộp tại:** `reports/group_report.md`  
-> **Deadline commit:** xem `SCORING.md` (code/trace sớm; report có thể muộn hơn nếu được phép).  
-> Phải có **run_id**, **đường dẫn artifact**, và **bằng chứng before/after** (CSV eval hoặc screenshot).
+Ghi chú trung thực: tại thời điểm cập nhật, repo chỉ có bằng chứng chắc chắn cho 1 thành viên nêu trên. Không tự điền thêm thành viên/role khi chưa có dữ liệu kiểm chứng.
 
 ---
 
-## 1. Pipeline tổng quan (150–200 từ)
+## 1. Pipeline tổng quan
 
-> Nguồn raw là gì (CSV mẫu / export thật)? Chuỗi lệnh chạy end-to-end? `run_id` lấy ở đâu trong log?
+Nguồn raw sử dụng là data/raw/policy_export_dirty.csv. Luồng chạy end-to-end theo etl_pipeline.py:
 
-**Tóm tắt luồng:**
+1. Ingest CSV và map schema.
+2. Chạy cleaning rules trong transform/cleaning_rules.py để loại bỏ unknown doc_id, parse ngày, quarantine dữ liệu lỗi, fix stale refund và chuẩn hóa text.
+3. Chạy expectation suite trong quality/expectations.py.
+4. Embed vào Chroma collection day10_kb, upsert theo chunk_id và prune id không còn trong cleaned để giữ snapshot idempotent.
+5. Ghi log và manifest trong artifacts/logs/ và artifacts/manifests/.
 
-_________________
+Lệnh chạy thực tế:
 
-**Lệnh chạy một dòng (copy từ README thực tế của nhóm):**
+/home/tuanhung/VINUNI/assignments/day_01_llm_api_foundation/vinuni/bin/python etl_pipeline.py run --run-id sprint3-after
 
-_________________
-
----
-
-## 2. Cleaning & expectation (150–200 từ)
-
-> Baseline đã có nhiều rule (allowlist, ngày ISO, HR stale, refund, dedupe…). Nhóm thêm **≥3 rule mới** + **≥2 expectation mới**. Khai báo expectation nào **halt**.
-
-### 2a. Bảng metric_impact (bắt buộc — chống trivial)
-
-| Rule / Expectation mới (tên ngắn) | Trước (số liệu) | Sau / khi inject (số liệu) | Chứng cứ (log / CSV / commit) |
-|-----------------------------------|------------------|-----------------------------|-------------------------------|
-| … | … | … | … |
-
-**Rule chính (baseline + mở rộng):**
-
-- …
-
-**Ví dụ 1 lần expectation fail (nếu có) và cách xử lý:**
-
-_________________
+Kết quả run sprint3-after (từ manifest_sprint3-after.json): raw_records=10, cleaned_records=6, quarantine_records=4.
 
 ---
 
-## 3. Before / after ảnh hưởng retrieval hoặc agent (200–250 từ)
+## 2. Cleaning & expectation
 
-> Bắt buộc: inject corruption (Sprint 3) — mô tả + dẫn `artifacts/eval/…` hoặc log.
+Code hiện tại có baseline rules + extensions trong transform/cleaning_rules.py (Rule 7-11) và expectation E7-E8 trong quality/expectations.py.
 
-**Kịch bản inject:**
+### 2a. Bảng metric_impact
 
-_________________
+| Rule / Expectation mới | Trước (before) | Sau (after) | Chứng cứ |
+|------------------------|--------------------------|----------------------|----------|
+| refund_no_stale_14d_window (halt) | violations=1 ở sprint3-before | violations=0 ở sprint3-after | artifacts/logs/run_sprint3-before.log, artifacts/logs/run_sprint3-after.log |
+| no_missing_exported_at (halt) | missing_exported_at_count=0 | vẫn 0 trước/sau | artifacts/logs/run_sprint3-before.log |
+| max_chunk_length_5000 (warn) | chunks_over_5000=0 | vẫn 0 trước/sau | artifacts/logs/run_sprint3-after.log |
+| Prune stale vectors | không có id dư sau run clean | embed_prune_removed=1 khi chuyển giữa before/after | artifacts/logs/run_sprint3-before.log, artifacts/logs/run_sprint3-after.log |
 
-**Kết quả định lượng (từ CSV / bảng):**
+Ví dụ expectation fail ở run before:
 
-_________________
+- Run sprint3-before ghi nhận expectation refund fail trước khi phục hồi ở run sau.
+- Log ghi rõ: expectation[refund_no_stale_14d_window] FAIL (halt) :: violations=1.
+- Run sprint3-after chạy lại pipeline chuẩn và expectation này trở về OK.
 
 ---
 
-## 4. Freshness & monitoring (100–150 từ)
+## 3. Before / after ảnh hưởng retrieval
 
-> SLA bạn chọn, ý nghĩa PASS/WARN/FAIL trên manifest mẫu.
+Kịch bản before/after theo Sprint 3:
 
-_________________
+- Before: python etl_pipeline.py run --run-id sprint3-before --no-refund-fix --skip-validate
+- Eval before: python eval_retrieval.py --out artifacts/eval/sprint3-before_eval.csv
+- After: python etl_pipeline.py run --run-id sprint3-after
+- Eval after: python eval_retrieval.py --out artifacts/eval/sprint3-after_eval.csv
+
+Kết quả định lượng (từ file CSV thật):
+
+- Trước (before): full_pass=3/4, no_forbidden=3/4.
+- Sau fix (after): full_pass=4/4, no_forbidden=4/4.
+- Câu q_refund_window: hits_forbidden đổi từ yes (before) sang no (after).
+- Câu q_leave_version: giữ ổn định contains_expected=yes, hits_forbidden=no, top1_doc_expected=yes ở cả before và after.
+
+Bảng tổng hợp đã lưu trong:
+
+- artifacts/eval/before_after_eval.csv
 
 ---
 
-## 5. Liên hệ Day 09 (50–100 từ)
+## 4. Freshness & monitoring
 
-> Dữ liệu sau embed có phục vụ lại multi-agent Day 09 không? Nếu có, mô tả tích hợp; nếu không, giải thích vì sao tách collection.
+Freshness check của run sprint3-before và sprint3-after đều FAIL do dữ liệu raw cũ hơn SLA 24h:
 
-_________________
+- latest_exported_at: 2026-04-10T08:00:00
+- age_hours: 122.293 (before), 122.331 (after)
+- sla_hours: 24.0
+- reason: freshness_sla_exceeded
+
+Diễn giải: đây là hành vi đúng với snapshot lab. Pipeline vẫn pass ETL/expectation ở run clean và ghi rõ nguyên nhân freshness trong log/manifest.
+
+---
+
+## 5. Liên hệ Day 09
+
+Collection dùng cho Day 10 là day10_kb (khác với day09_kb) để tách bộ test và tránh nhiễu index khi so sánh before/after. Dữ liệu sau clean/embed vẫn cùng domain với Day 09 (refund, SLA, FAQ, HR leave), nên có thể tích hợp lại worker retrieval của Day 09 nếu cấu hình cùng collection.
 
 ---
 
 ## 6. Rủi ro còn lại & việc chưa làm
 
-- …
+- Chưa có source dữ liệu mới theo SLA 24h; cần cập nhật exported_at hoặc đổi SLA nếu theo snapshot.
+- Chưa có kênh alert bên ngoài (Slack/Email); hiện tại chỉ lưu log nội bộ.
+- Chưa có đầy đủ báo cáo cá nhân của toàn bộ thành viên trong thư mục reports/individual/.
