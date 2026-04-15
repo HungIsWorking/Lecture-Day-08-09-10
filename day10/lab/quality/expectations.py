@@ -2,6 +2,14 @@
 Expectation suite đơn giản (không bắt buộc Great Expectations).
 
 Sinh viên có thể thay bằng GE / pydantic / custom — miễn là có halt có kiểm soát.
+
+Extensions (Day 10):
+  E7 - max_chunk_length_5000: warn nếu chunk > 5000 chars (embedding quality guardrail)
+  E8 - no_missing_exported_at: halt nếu exported_at rỗng (freshness SLA phụ thuộc trường này)
+
+Phân biệt warn/halt:
+  - warn: phát hiện nhưng không dừng pipeline (chunk quá dài vẫn embed được)
+  - halt: lỗi nghiêm trọng, dừng pipeline trước embed nếu không dùng --skip-validate
 """
 
 from __future__ import annotations
@@ -109,6 +117,32 @@ def run_expectations(cleaned_rows: List[Dict[str, Any]]) -> Tuple[List[Expectati
             ok6,
             "halt",
             f"violations={len(bad_hr_annual)}",
+        )
+    )
+
+    # E7: max_chunk_length — warn nếu có chunk > 5000 chars (embedding quality guardrail)
+    # Phân biệt warn/halt: warn vì chunk quá dài vẫn embed được nhưng chất lượng giảm
+    too_long = [r for r in cleaned_rows if len((r.get("chunk_text") or "")) > 5000]
+    ok7 = len(too_long) == 0
+    results.append(
+        ExpectationResult(
+            "max_chunk_length_5000",
+            ok7,
+            "warn",
+            f"chunks_over_5000={len(too_long)}",
+        )
+    )
+
+    # E8: no_missing_exported_at — halt vì freshness SLA phụ thuộc trường này
+    # Không có exported_at → freshness check không thể tính age_hours → coi là lỗi nghiêm trọng
+    no_exp = [r for r in cleaned_rows if not (r.get("exported_at") or "").strip()]
+    ok8 = len(no_exp) == 0
+    results.append(
+        ExpectationResult(
+            "no_missing_exported_at",
+            ok8,
+            "halt",
+            f"missing_exported_at_count={len(no_exp)}",
         )
     )
 
