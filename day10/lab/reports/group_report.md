@@ -8,7 +8,7 @@
 
 | Tên | Vai trò Day 10 | Ghi chú bằng chứng |
 |-----|-----------------|---------------------|
-| Nguyễn Tuấn Hùng | Monitoring / Docs Owner | Có chạy thực nghiệm before/after, tổng hợp số liệu, hoàn thiện báo cáo và kiểm tra grading/manifest |
+| Nguyễn Tuấn Hưng | Monitoring / Docs Owner | Có chạy thực nghiệm before/after, tổng hợp số liệu, hoàn thiện báo cáo và kiểm tra grading/manifest |
 
 Ghi chú trung thực: tại thời điểm cập nhật, repo chỉ có bằng chứng chắc chắn cho 1 thành viên nêu trên. Không tự điền thêm thành viên/role khi chưa có dữ liệu kiểm chứng.
 
