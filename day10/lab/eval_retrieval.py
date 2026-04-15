@@ -13,6 +13,7 @@ import csv
 import json
 import os
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -40,6 +41,16 @@ def main() -> int:
         help="CSV kết quả",
     )
     parser.add_argument("--top-k", type=int, default=3)
+    parser.add_argument(
+        "--summary-out",
+        default="",
+        help="Đường dẫn JSON summary (tuỳ chọn) để phục vụ report/monitoring",
+    )
+    parser.add_argument(
+        "--strict-exit",
+        action="store_true",
+        help="Thoát với mã 4 nếu có câu fail (phù hợp CI/monitoring)",
+    )
     args = parser.parse_args()
 
     try:
@@ -82,6 +93,13 @@ def main() -> int:
         "top_k_used",
     ]
     write_header = not out_path.exists() or out_path.stat().st_size == 0
+    total = 0
+    pass_contains_expected = 0
+    pass_no_forbidden = 0
+    top1_checks = 0
+    top1_pass = 0
+    full_pass = 0
+
     with out_path.open("a", encoding="utf-8", newline="") as fcsv:
         w = csv.DictWriter(fcsv, fieldnames=fieldnames)
         if write_header:
@@ -102,6 +120,25 @@ def main() -> int:
             top1_expected = ""
             if want_top1:
                 top1_expected = "yes" if top_doc == want_top1 else "no"
+
+            row_contains_expected = "yes" if ok_any else "no"
+            row_hits_forbidden = "yes" if bad_forb else "no"
+            row_top1_expected = top1_expected
+
+            total += 1
+            if ok_any:
+                pass_contains_expected += 1
+            if not bad_forb:
+                pass_no_forbidden += 1
+            top1_ok_for_row = True
+            if want_top1:
+                top1_checks += 1
+                top1_ok_for_row = top_doc == want_top1
+                if top1_ok_for_row:
+                    top1_pass += 1
+            if ok_any and (not bad_forb) and top1_ok_for_row:
+                full_pass += 1
+
             w.writerow(
                 {
                     "scenario": args.scenario,
@@ -109,14 +146,44 @@ def main() -> int:
                     "question": text,
                     "top1_doc_id": top_doc,
                     "top1_preview": preview,
-                    "contains_expected": "yes" if ok_any else "no",
-                    "hits_forbidden": "yes" if bad_forb else "no",
-                    "top1_doc_expected": top1_expected,
+                    "contains_expected": row_contains_expected,
+                    "hits_forbidden": row_hits_forbidden,
+                    "top1_doc_expected": row_top1_expected,
                     "top_k_used": args.top_k,
                 }
             )
 
+    summary = {
+        "evaluated_at_utc": datetime.now(timezone.utc).isoformat(),
+        "scenario": args.scenario,
+        "output_csv": str(out_path),
+        "top_k": args.top_k,
+        "total_questions": total,
+        "pass_contains_expected": pass_contains_expected,
+        "pass_no_forbidden": pass_no_forbidden,
+        "top1_checks": top1_checks,
+        "top1_pass": top1_pass,
+        "full_pass": full_pass,
+        "full_pass_rate": (full_pass / total) if total else 0.0,
+    }
+
+    if args.summary_out:
+        summary_path = Path(args.summary_out)
+        summary_path.parent.mkdir(parents=True, exist_ok=True)
+        summary_path.write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
+        print(f"Wrote summary {summary_path}")
+
+    print(
+        "Summary "
+        f"scenario={args.scenario} total={total} full_pass={full_pass}/{total} "
+        f"contains_expected={pass_contains_expected}/{total} "
+        f"no_forbidden={pass_no_forbidden}/{total} top1={top1_pass}/{top1_checks}"
+    )
     print(f"Wrote {out_path}")
+
+    if args.strict_exit and full_pass < total:
+        return 4
+
     return 0
 
 
