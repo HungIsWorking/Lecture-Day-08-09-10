@@ -1,0 +1,4 @@
+chunk_id,doc_id,chunk_text,effective_date,exported_at,reason,effective_date_normalized
+5,hr_leave_policy,Nhân viên dưới 3 năm kinh nghiệm được 10 ngày phép năm (bản HR 2025).,2025-01-01,2026-04-15T08:00:00,stale_hr_policy_effective_date,2025-01-01
+7,legacy_catalog_xyz_zzz,Chunk này chỉ để kiểm tra quarantine do doc_id không nằm trong allowlist.,2026-02-01,2026-04-15T08:00:00,unknown_doc_id,
+8,policy_refund_v4,,2026-02-01,2026-04-15T08:00:00,missing_chunk_text,
